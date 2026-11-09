@@ -15,12 +15,39 @@ Read-only two-pane navigator with optional Azure AKS credential refresh.
 
 ## Requirements
 
-- Go 1.22+ (to build)
+- Go 1.26+ (to build from source; see `go.mod`)
 - `kubectl` / a valid kubeconfig with the contexts you reference
 - Linux `az` CLI and `kubelogin` (only if you use `l` / azure blocks)
 - Run `az login` yourself first (in WSL/Cursor prefer `az login --use-device-code`)
 
-## Install / run
+## Install from release
+
+GitHub Actions publishes binaries for **Linux** (Debian/WSL), **macOS**, and **Windows** when a version tag is pushed.
+
+1. Open the [latest release](https://github.com/elmosgot/kube-commander/releases/latest).
+2. Download the asset for your OS/arch, for example:
+
+```bash
+# Linux amd64 (Debian, Ubuntu, WSL)
+VERSION=v0.1.0   # or use the tag from the releases page
+curl -fsSL -o kube-commander \
+  "https://github.com/elmosgot/kube-commander/releases/download/${VERSION}/kube-commander_${VERSION}_linux_amd64"
+chmod +x kube-commander
+./kube-commander --version
+```
+
+Other assets: `linux_arm64`, `darwin_amd64`, `darwin_arm64`, `windows_amd64.exe`. Each release also includes `checksums.txt`.
+
+### Cut a release (maintainers)
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+That runs the **Release** workflow and creates a GitHub Release with the binaries.
+
+## Build from source
 
 ```bash
 go build -o bin/kube-commander ./cmd/kube-commander
