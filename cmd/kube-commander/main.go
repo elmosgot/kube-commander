@@ -12,9 +12,18 @@ import (
 	"github.com/elwin/kube-commander/internal/ui"
 )
 
+// version is set at link time via -ldflags "-X main.version=...".
+var version = "dev"
+
 func main() {
 	configPath := flag.String("config", "", "path to kube-commander config (default: ~/.config/kube-commander/config.yaml)")
+	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println(version)
+		return
+	}
 
 	examplePath := findExampleConfig()
 	cfg, resolved, err := config.Load(*configPath, examplePath)
