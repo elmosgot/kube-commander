@@ -1,0 +1,68 @@
+# Example kube-commander config (generic placeholders).
+# Copy to ~/.config/kube-commander/config.yaml and replace
+# context / namespace / azure fields with your real values from:
+#   kubectl config get-contexts -o name
+# Press `a` for az login -s {subscription}, `l` to ensure credentials
+# into $HOME/.kube/config.
+pools:
+  - name: pool-x
+    environments:
+      - name: develop
+        context: pool-x-dev
+        namespace: app
+        azure:
+          subscription: 00000000-0000-0000-0000-000000000001
+          resource_group: rg-pool-x-dev
+          cluster: aks-pool-x-dev
+      - name: testing
+        context: pool-x-test
+        namespace: app
+        azure:
+          subscription: 00000000-0000-0000-0000-000000000002
+          resource_group: rg-pool-x-test
+          cluster: aks-pool-x-test
+      - name: acceptance
+        context: pool-x-acc
+        namespace: app
+        azure:
+          subscription: 00000000-0000-0000-0000-000000000003
+          resource_group: rg-pool-x-acc
+          cluster: aks-pool-x-acc
+      - name: production
+        context: pool-x-prod
+        namespace: app
+        azure:
+          subscription: 00000000-0000-0000-0000-000000000004
+          resource_group: rg-pool-x-prod
+          cluster: aks-pool-x-prod
+
+  - name: pool-y
+    environments:
+      - name: develop
+        context: pool-y-dev
+        namespace: app
+        azure:
+          subscription: 00000000-0000-0000-0000-000000000011
+          resource_group: rg-pool-y-dev
+          cluster: aks-pool-y-dev
+      - name: testing
+        context: pool-y-test
+        namespace: app
+        azure:
+          subscription: 00000000-0000-0000-0000-000000000012
+          resource_group: rg-pool-y-test
+          cluster: aks-pool-y-test
+      - name: acceptance
+        context: pool-y-acc
+        namespace: app
+        azure:
+          subscription: 00000000-0000-0000-0000-000000000013
+          resource_group: rg-pool-y-acc
+          cluster: aks-pool-y-acc
+      - name: production
+        context: pool-y-prod
+        namespace: app
+        azure:
+          subscription: 00000000-0000-0000-0000-000000000014
+          resource_group: rg-pool-y-prod
+          cluster: aks-pool-y-prod
