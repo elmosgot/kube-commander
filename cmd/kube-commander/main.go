@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/elwin/kube-commander/internal/applog"
 	"github.com/elwin/kube-commander/internal/config"
 	"github.com/elwin/kube-commander/internal/ui"
 )
@@ -25,12 +26,19 @@ func main() {
 		return
 	}
 
+	applog.SetVersion(version)
+	if err := applog.Init(); err != nil {
+		fmt.Fprintf(os.Stderr, "kube-commander: session log: %v\n", err)
+	}
+	defer applog.Close()
+
 	examplePath := findExampleConfig()
 	cfg, resolved, err := config.Load(*configPath, examplePath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "kube-commander: %v\n", err)
 		os.Exit(1)
 	}
+	applog.Infof("config=%s", resolved)
 
 	model := ui.New(cfg, resolved)
 	p := tea.NewProgram(model, tea.WithAltScreen())

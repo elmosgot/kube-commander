@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/elwin/kube-commander/internal/applog"
 	"github.com/elwin/kube-commander/internal/config"
 )
 
@@ -20,6 +21,9 @@ const minLoginSubscriptionMajor, minLoginSubscriptionMinor, minLoginSubscription
 // EnvLoginExperienceV2 is the Azure CLI env override for core.login_experience_v2.
 // Setting it to "off" skips the interactive subscription picker for that process only.
 const EnvLoginExperienceV2 = "AZURE_CORE_LOGIN_EXPERIENCE_V2"
+
+// EnvCoreOutput is the Azure CLI env override for core.output.
+const EnvCoreOutput = "AZURE_CORE_OUTPUT"
 
 var (
 	azVersionOnce sync.Once
@@ -75,20 +79,29 @@ func getCredentialsArgs(env config.Environment, kubeconfig string) []string {
 
 // LoginArgs returns arguments for interactive az login.
 // When supportsLoginSub is true (Azure CLI >= 2.87.0), includes -s {subscription}.
+// Always includes -o none so account JSON is not printed to the TUI.
 func LoginArgs(subscription string, supportsLoginSub bool) []string {
+	args := []string{"login"}
 	if supportsLoginSub && subscription != "" {
-		return []string{"login", "-s", subscription}
+		args = append(args, "-s", subscription)
 	}
-	return []string{"login"}
+	return append(args, "-o", "none")
 }
 
-// PrepareLoginCmd builds an interactive az login command that always suppresses
-// the subscription picker via AZURE_CORE_LOGIN_EXPERIENCE_V2=off (per-process only).
+// PrepareLoginCmd builds an interactive az login command that suppresses the
+// subscription picker and keeps stdout out of the TUI (session log + -o none).
+// Stderr is left unset so Bubble Tea can wire device-code / error messages to the terminal.
 func PrepareLoginCmd(subscription string) *exec.Cmd {
 	supportsLoginSub := DetectLoginSubscriptionSupport()
 	args := LoginArgs(subscription, supportsLoginSub)
-	cmd := exec.Command(ResolveAzBinary(), args...)
-	cmd.Env = append(os.Environ(), EnvLoginExperienceV2+"=off")
+	azBin := ResolveAzBinary()
+	applog.Infof("starting interactive: %s %s (AZURE_CORE_LOGIN_EXPERIENCE_V2=off AZURE_CORE_OUTPUT=none)", azBin, strings.Join(args, " "))
+	cmd := exec.Command(azBin, args...)
+	cmd.Env = append(os.Environ(),
+		EnvLoginExperienceV2+"=off",
+		EnvCoreOutput+"=none",
+	)
+	cmd.Stdout = applog.Writer()
 	return cmd
 }
 
@@ -155,9 +168,13 @@ func parseSemver(s string) (major, minor, patch int, err error) {
 func DetectLoginSubscriptionSupport() bool {
 	azVersionOnce.Do(func() {
 		azBin := ResolveAzBinary()
-		out, err := exec.Command(azBin, "version", "-o", "json").Output()
+		args := []string{"version", "-o", "json"}
+		out, err := exec.Command(azBin, args...).Output()
+		applog.Cmd(azBin, args, string(out), err)
 		if err != nil {
-			out, err = exec.Command(azBin, "--version").Output()
+			args = []string{"--version"}
+			out, err = exec.Command(azBin, args...).Output()
+			applog.Cmd(azBin, args, string(out), err)
 		}
 		if err != nil {
 			azVersionErr = err
@@ -198,11 +215,14 @@ func isExecutable(path string) bool {
 
 func runCmd(name string, args ...string) error {
 	cmd := exec.Command(name, args...)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	cmd.Stdout = &stderr
-	if err := cmd.Run(); err != nil {
-		msg := strings.TrimSpace(stderr.String())
+	var buf bytes.Buffer
+	cmd.Stderr = &buf
+	cmd.Stdout = &buf
+	err := cmd.Run()
+	output := buf.String()
+	applog.Cmd(name, args, output, err)
+	if err != nil {
+		msg := strings.TrimSpace(output)
 		if msg == "" {
 			msg = err.Error()
 		}

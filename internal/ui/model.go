@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/elwin/kube-commander/internal/applog"
 	"github.com/elwin/kube-commander/internal/azure"
 	"github.com/elwin/kube-commander/internal/config"
 	"github.com/elwin/kube-commander/internal/kube"
@@ -485,11 +486,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if msg.err != nil {
+			applog.Infof("az login finished: error: %v", msg.err)
 			m.loading = false
 			m.err = msg.err.Error()
 			m.status = ""
 			return m, nil
 		}
+		applog.Infof("az login finished: ok")
 		if env.Azure != nil && env.Azure.Subscription != "" {
 			if err := azure.SetSubscription(env.Azure.Subscription); err != nil {
 				m.loading = false
