@@ -15,6 +15,7 @@ import (
 const (
 	keepSessions = 10
 	sessionGlob  = "session-*.log"
+	maxRecentCmds = 20
 )
 
 var (
@@ -24,6 +25,7 @@ var (
 	nowFn  = time.Now
 	pidFn  = os.Getpid
 	version = "dev"
+	recentCmds []string
 )
 
 // SetVersion records the app version written into the session header.
@@ -49,6 +51,7 @@ func ResetForTest() {
 	dirFn = defaultDir
 	nowFn = time.Now
 	pidFn = os.Getpid
+	recentCmds = nil
 }
 
 func defaultDir() string {
@@ -169,31 +172,36 @@ func (logWriter) Write(p []byte) (int, error) {
 }
 
 // Infof writes a timestamped info line.
+// Lines that look like shell starts ("starting interactive: …") are also recorded in RecentCmds.
 func Infof(format string, args ...any) {
 	mu.Lock()
 	defer mu.Unlock()
+	msg := fmt.Sprintf(format, args...)
+	if strings.HasPrefix(msg, "starting interactive: ") {
+		recordCmdLocked(strings.TrimPrefix(msg, "starting interactive: "))
+	}
 	if file == nil {
 		return
 	}
-	line := stamp() + " " + fmt.Sprintf(format, args...) + "\n"
-	_, _ = file.WriteString(line)
+	_, _ = file.WriteString(stamp() + " " + msg + "\n")
 }
 
 // Cmd logs an external command invocation and its combined output.
 func Cmd(name string, args []string, output string, err error) {
 	mu.Lock()
 	defer mu.Unlock()
+	line := name
+	if len(args) > 0 {
+		line += " " + strings.Join(args, " ")
+	}
+	recordCmdLocked(line)
 	if file == nil {
 		return
 	}
 	var b strings.Builder
 	b.WriteString(stamp())
 	b.WriteString(" $ ")
-	b.WriteString(name)
-	if len(args) > 0 {
-		b.WriteString(" ")
-		b.WriteString(strings.Join(args, " "))
-	}
+	b.WriteString(line)
 	b.WriteString("\n")
 	out := strings.TrimSpace(output)
 	if out != "" {
@@ -210,6 +218,27 @@ func Cmd(name string, args []string, output string, err error) {
 		b.WriteString(" exit: ok\n")
 	}
 	_, _ = file.WriteString(b.String())
+}
+
+
+// RecentCmds returns a copy of the recent shell command lines (oldest first).
+func RecentCmds() []string {
+	mu.Lock()
+	defer mu.Unlock()
+	out := make([]string, len(recentCmds))
+	copy(out, recentCmds)
+	return out
+}
+
+func recordCmdLocked(line string) {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return
+	}
+	recentCmds = append(recentCmds, line)
+	if len(recentCmds) > maxRecentCmds {
+		recentCmds = recentCmds[len(recentCmds)-maxRecentCmds:]
+	}
 }
 
 func stamp() string {
