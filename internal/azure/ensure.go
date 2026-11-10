@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/elwin/kube-commander/internal/applog"
 	"github.com/elwin/kube-commander/internal/config"
 )
 
@@ -87,7 +88,9 @@ func LoginArgs(subscription string, supportsLoginSub bool) []string {
 func PrepareLoginCmd(subscription string) *exec.Cmd {
 	supportsLoginSub := DetectLoginSubscriptionSupport()
 	args := LoginArgs(subscription, supportsLoginSub)
-	cmd := exec.Command(ResolveAzBinary(), args...)
+	azBin := ResolveAzBinary()
+	applog.Infof("starting interactive: %s %s (AZURE_CORE_LOGIN_EXPERIENCE_V2=off)", azBin, strings.Join(args, " "))
+	cmd := exec.Command(azBin, args...)
 	cmd.Env = append(os.Environ(), EnvLoginExperienceV2+"=off")
 	return cmd
 }
@@ -155,9 +158,13 @@ func parseSemver(s string) (major, minor, patch int, err error) {
 func DetectLoginSubscriptionSupport() bool {
 	azVersionOnce.Do(func() {
 		azBin := ResolveAzBinary()
-		out, err := exec.Command(azBin, "version", "-o", "json").Output()
+		args := []string{"version", "-o", "json"}
+		out, err := exec.Command(azBin, args...).Output()
+		applog.Cmd(azBin, args, string(out), err)
 		if err != nil {
-			out, err = exec.Command(azBin, "--version").Output()
+			args = []string{"--version"}
+			out, err = exec.Command(azBin, args...).Output()
+			applog.Cmd(azBin, args, string(out), err)
 		}
 		if err != nil {
 			azVersionErr = err
@@ -198,11 +205,14 @@ func isExecutable(path string) bool {
 
 func runCmd(name string, args ...string) error {
 	cmd := exec.Command(name, args...)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	cmd.Stdout = &stderr
-	if err := cmd.Run(); err != nil {
-		msg := strings.TrimSpace(stderr.String())
+	var buf bytes.Buffer
+	cmd.Stderr = &buf
+	cmd.Stdout = &buf
+	err := cmd.Run()
+	output := buf.String()
+	applog.Cmd(name, args, output, err)
+	if err != nil {
+		msg := strings.TrimSpace(output)
 		if msg == "" {
 			msg = err.Error()
 		}
