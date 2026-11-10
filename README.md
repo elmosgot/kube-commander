@@ -169,6 +169,7 @@ Ensure (`l`) always writes with `az aks get-credentials --file <resolved>` and t
 | `g` | Tail last 200 lines of logs for the selected container (pod detail) |
 | `a` | Interactive `az login` (picker suppressed via env; `-s` when Azure CLI ≥ 2.87), then `az account set` + ensure credentials |
 | `l` | Ensure Azure credentials into `$HOME/.kube/config` (`az` + `kubelogin`) |
+| `c` | Toggle bottom commands panel (equivalent `kubectl` for the current view + recent shell commands) |
 | `Backspace` / `←` / `h` / `Esc` | Go up one level (logs → detail → pods → deployments → namespaces) |
 | `r` | Refresh the current right-pane view |
 | `q` | Quit |

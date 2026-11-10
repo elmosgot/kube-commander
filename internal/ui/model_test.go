@@ -45,7 +45,7 @@ func TestModelRendersPools(t *testing.T) {
 	m.height = 40
 
 	view := m.View()
-	for _, want := range []string{"kube-commander", "Pools", "pool-x", "testing", "pool-y", "namespace=app", "kubeconfig=", "a az login", "g logs"} {
+	for _, want := range []string{"kube-commander", "Pools", "pool-x", "testing", "pool-y", "namespace=app", "kubeconfig=", "a az login", "g logs", "c commands"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("view missing %q:\n%s", want, view)
 		}
