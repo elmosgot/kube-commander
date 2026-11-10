@@ -2,13 +2,34 @@ package azure
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
+	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/elwin/kube-commander/internal/config"
 )
+
+// Minimum Azure CLI version that supports `az login --subscription` / `-s`.
+const minLoginSubscriptionMajor, minLoginSubscriptionMinor, minLoginSubscriptionPatch = 2, 87, 0
+
+// EnvLoginExperienceV2 is the Azure CLI env override for core.login_experience_v2.
+// Setting it to "off" skips the interactive subscription picker for that process only.
+const EnvLoginExperienceV2 = "AZURE_CORE_LOGIN_EXPERIENCE_V2"
+
+var (
+	azVersionOnce sync.Once
+	azVersionMaj  int
+	azVersionMin  int
+	azVersionPat  int
+	azVersionErr  error
+)
+
+var semverRe = regexp.MustCompile(`(\d+)\.(\d+)\.(\d+)`)
 
 // EnsureCredentials runs `az aks get-credentials` into the resolved home kubeconfig,
 // then converts that file with kubelogin for Azure CLI auth.
@@ -52,9 +73,102 @@ func getCredentialsArgs(env config.Environment, kubeconfig string) []string {
 	return args
 }
 
-// LoginArgs returns arguments for interactive `az login -s {subscription}`.
-func LoginArgs(subscription string) []string {
-	return []string{"login", "-s", subscription}
+// LoginArgs returns arguments for interactive az login.
+// When supportsLoginSub is true (Azure CLI >= 2.87.0), includes -s {subscription}.
+func LoginArgs(subscription string, supportsLoginSub bool) []string {
+	if supportsLoginSub && subscription != "" {
+		return []string{"login", "-s", subscription}
+	}
+	return []string{"login"}
+}
+
+// PrepareLoginCmd builds an interactive az login command that always suppresses
+// the subscription picker via AZURE_CORE_LOGIN_EXPERIENCE_V2=off (per-process only).
+func PrepareLoginCmd(subscription string) *exec.Cmd {
+	supportsLoginSub := DetectLoginSubscriptionSupport()
+	args := LoginArgs(subscription, supportsLoginSub)
+	cmd := exec.Command(ResolveAzBinary(), args...)
+	cmd.Env = append(os.Environ(), EnvLoginExperienceV2+"=off")
+	return cmd
+}
+
+// AccountSetArgs returns arguments for `az account set --subscription`.
+func AccountSetArgs(subscription string) []string {
+	return []string{"account", "set", "--subscription", subscription}
+}
+
+// SetSubscription pins the active Azure subscription via `az account set`.
+func SetSubscription(subscription string) error {
+	if subscription == "" {
+		return fmt.Errorf("subscription is required")
+	}
+	azBin := ResolveAzBinary()
+	if err := runCmd(azBin, AccountSetArgs(subscription)...); err != nil {
+		return fmt.Errorf("az account set: %w", err)
+	}
+	return nil
+}
+
+// SupportsLoginSubscription reports whether az login accepts --subscription / -s.
+func SupportsLoginSubscription(major, minor, patch int) bool {
+	if major != minLoginSubscriptionMajor {
+		return major > minLoginSubscriptionMajor
+	}
+	if minor != minLoginSubscriptionMinor {
+		return minor > minLoginSubscriptionMinor
+	}
+	return patch >= minLoginSubscriptionPatch
+}
+
+// ParseAzVersion extracts major.minor.patch from `az version -o json` or `az --version` text.
+func ParseAzVersion(output string) (major, minor, patch int, err error) {
+	output = strings.TrimSpace(output)
+	if output == "" {
+		return 0, 0, 0, fmt.Errorf("empty az version output")
+	}
+
+	var payload map[string]any
+	if json.Unmarshal([]byte(output), &payload) == nil {
+		if v, ok := payload["azure-cli"]; ok {
+			if s, ok := v.(string); ok {
+				return parseSemver(s)
+			}
+		}
+	}
+
+	return parseSemver(output)
+}
+
+func parseSemver(s string) (major, minor, patch int, err error) {
+	m := semverRe.FindStringSubmatch(s)
+	if m == nil {
+		return 0, 0, 0, fmt.Errorf("no semver in %q", s)
+	}
+	major, _ = strconv.Atoi(m[1])
+	minor, _ = strconv.Atoi(m[2])
+	patch, _ = strconv.Atoi(m[3])
+	return major, minor, patch, nil
+}
+
+// DetectLoginSubscriptionSupport runs az once per process to decide if login -s is available.
+// On detection failure it returns false so callers use the portable login + account set path.
+func DetectLoginSubscriptionSupport() bool {
+	azVersionOnce.Do(func() {
+		azBin := ResolveAzBinary()
+		out, err := exec.Command(azBin, "version", "-o", "json").Output()
+		if err != nil {
+			out, err = exec.Command(azBin, "--version").Output()
+		}
+		if err != nil {
+			azVersionErr = err
+			return
+		}
+		azVersionMaj, azVersionMin, azVersionPat, azVersionErr = ParseAzVersion(string(out))
+	})
+	if azVersionErr != nil {
+		return false
+	}
+	return SupportsLoginSubscription(azVersionMaj, azVersionMin, azVersionPat)
 }
 
 // ResolveAzBinary prefers /usr/bin/az to avoid Windows az on a polluted WSL PATH.

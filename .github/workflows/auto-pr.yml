@@ -1,0 +1,115 @@
+name: Auto create draft PR
+
+on:
+  push:
+    branches-ignore:
+      - main
+
+jobs:
+  create-pr:
+    runs-on: ubuntu-24.04
+    if: github.actor != 'dependabot[bot]'
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Create draft PR if not exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+        run: |
+          BRANCH_NAME="${{ github.ref_name }}"
+          ISSUE_SOURCE=""
+          ISSUE_REF=""
+          ISSUE_TITLE=""
+          ISSUE_BODY=""
+
+          if [[ "${BRANCH_NAME}" =~ ^issues/([0-9]+)- ]]; then
+            ISSUE_SOURCE="github"
+            ISSUE_REF="${BASH_REMATCH[1]}"
+            echo "Found GitHub issue #${ISSUE_REF} in branch '${BRANCH_NAME}'."
+
+            ISSUE_JSON=$(gh issue view "${ISSUE_REF}" --json title,body,url)
+            ISSUE_TITLE=$(echo "${ISSUE_JSON}" | jq -r '.title')
+            ISSUE_BODY=$(echo "${ISSUE_JSON}" | jq -r '.body // ""')
+            ISSUE_URL=$(echo "${ISSUE_JSON}" | jq -r '.url')
+
+            if [ -z "${ISSUE_TITLE}" ] || [ "${ISSUE_TITLE}" = "null" ]; then
+              echo "GitHub issue #${ISSUE_REF} not found."
+              exit 1
+            fi
+
+            PR_TITLE="(#${ISSUE_REF}) ${ISSUE_TITLE}"
+            PR_BODY="${ISSUE_BODY}
+
+          Closes #${ISSUE_REF}"
+          else
+            mapfile -t LINEAR_IDS < <(echo "${BRANCH_NAME}" | grep -oE '[A-Z]+-[0-9]+' || true)
+
+            if [ "${#LINEAR_IDS[@]}" -eq 0 ]; then
+              echo "Branch '${BRANCH_NAME}' does not match issues/{number}-{slug} or {TEAM}-{number}-{slug}; skipping PR creation."
+              exit 0
+            fi
+
+            ISSUE_SOURCE="linear"
+            ISSUE_REF="${LINEAR_IDS[-1]}"
+            echo "Found Linear issue ${ISSUE_REF} in branch '${BRANCH_NAME}'."
+
+            if [ -z "${LINEAR_API_KEY}" ]; then
+              echo "LINEAR_API_KEY secret is required for Linear branch names."
+              exit 1
+            fi
+
+            # Trim accidental whitespace/newlines from the pasted secret
+            LINEAR_API_KEY="$(printf '%s' "${LINEAR_API_KEY}" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+            LINEAR_API_KEY="${LINEAR_API_KEY#Bearer }"
+
+            LINEAR_JSON=$(curl -sS https://api.linear.app/graphql \
+              -H "Authorization: ${LINEAR_API_KEY}" \
+              -H "Content-Type: application/json" \
+              -d "$(jq -n --arg id "${ISSUE_REF}" \
+                '{query: "query($id: String!) { issue(id: $id) { identifier title description url } }", variables: {id: $id}}')")
+
+            if ! echo "${LINEAR_JSON}" | jq -e . >/dev/null 2>&1; then
+              echo "Linear returned non-JSON (check LINEAR_API_KEY: personal API key, no Bearer prefix, no trailing whitespace)."
+              echo "Body (first 200 chars): ${LINEAR_JSON:0:200}"
+              exit 1
+            fi
+
+            if echo "${LINEAR_JSON}" | jq -e '.errors' >/dev/null 2>&1; then
+              echo "Linear API error: $(echo "${LINEAR_JSON}" | jq -r '.errors[0].message')"
+              exit 1
+            fi
+
+            ISSUE_TITLE=$(echo "${LINEAR_JSON}" | jq -r '.data.issue.title // empty')
+            ISSUE_BODY=$(echo "${LINEAR_JSON}" | jq -r '.data.issue.description // ""')
+            ISSUE_URL=$(echo "${LINEAR_JSON}" | jq -r '.data.issue.url // empty')
+
+            if [ -z "${ISSUE_TITLE}" ]; then
+              echo "Linear issue ${ISSUE_REF} not found."
+              exit 1
+            fi
+
+            PR_TITLE="(${ISSUE_REF}) ${ISSUE_TITLE}"
+            PR_BODY="${ISSUE_BODY}
+
+          Ref: [${ISSUE_REF}](${ISSUE_URL})"
+          fi
+
+          PR_ID=$(gh pr list --head "${BRANCH_NAME}" --base main --json number --jq '.[0].number')
+
+          if [ -n "${PR_ID}" ]; then
+            echo "Pull request #${PR_ID} already exists for '${BRANCH_NAME}'."
+            exit 0
+          fi
+
+          echo "Creating draft PR: ${PR_TITLE}"
+          gh pr create \
+            --title "${PR_TITLE}" \
+            --body "${PR_BODY}" \
+            --base main \
+            --head "${BRANCH_NAME}" \
+            --draft
