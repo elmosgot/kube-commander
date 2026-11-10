@@ -3,7 +3,6 @@ package ui
 import (
 	"context"
 	"fmt"
-	"os/exec"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -481,7 +480,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.spinner.Tick, m.loadNamespaces())
 
 	case loginMsg:
-		_, poolIdx, envIdx, ok := m.selectedEnv()
+		env, poolIdx, envIdx, ok := m.selectedEnv()
 		if !ok || poolIdx != msg.poolIdx || envIdx != msg.envIdx {
 			return m, nil
 		}
@@ -490,6 +489,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = msg.err.Error()
 			m.status = ""
 			return m, nil
+		}
+		if env.Azure != nil && env.Azure.Subscription != "" {
+			if err := azure.SetSubscription(env.Azure.Subscription); err != nil {
+				m.loading = false
+				m.err = err.Error()
+				m.status = ""
+				return m, nil
+			}
 		}
 		m.err = ""
 		m.status = "logged in · ensuring credentials…"
@@ -559,10 +566,15 @@ func (m Model) azLogin() (tea.Model, tea.Cmd) {
 		m.err = "azure.subscription is required for az login"
 		return m, nil
 	}
+	supportsLoginSub := azure.DetectLoginSubscriptionSupport()
 	m.loading = true
 	m.err = ""
-	m.status = "az login -s " + env.Azure.Subscription + "…"
-	cmd := exec.Command(azure.ResolveAzBinary(), azure.LoginArgs(env.Azure.Subscription)...)
+	if supportsLoginSub {
+		m.status = "az login -s " + env.Azure.Subscription + "…"
+	} else {
+		m.status = "az login…"
+	}
+	cmd := azure.PrepareLoginCmd(env.Azure.Subscription)
 	return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
 		return loginMsg{poolIdx: poolIdx, envIdx: envIdx, err: err}
 	})

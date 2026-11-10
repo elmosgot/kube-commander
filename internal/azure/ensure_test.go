@@ -75,10 +75,100 @@ func TestResolveAzBinaryPrefersUsrBin(t *testing.T) {
 	}
 }
 
-func TestLoginArgs(t *testing.T) {
-	args := LoginArgs("00000000-0000-0000-0000-000000000002")
+func TestLoginArgsWithSupport(t *testing.T) {
+	args := LoginArgs("00000000-0000-0000-0000-000000000002", true)
 	joined := strings.Join(args, " ")
 	if joined != "login -s 00000000-0000-0000-0000-000000000002" {
 		t.Fatalf("LoginArgs = %v", args)
+	}
+}
+
+func TestLoginArgsWithoutSupport(t *testing.T) {
+	args := LoginArgs("00000000-0000-0000-0000-000000000002", false)
+	joined := strings.Join(args, " ")
+	if joined != "login" {
+		t.Fatalf("LoginArgs = %v", args)
+	}
+}
+
+func TestPrepareLoginCmdSuppressesPicker(t *testing.T) {
+	sub := "00000000-0000-0000-0000-000000000002"
+	cmd := PrepareLoginCmd(sub)
+	if cmd == nil {
+		t.Fatal("expected command")
+	}
+
+	found := false
+	for _, e := range cmd.Env {
+		if e == EnvLoginExperienceV2+"=off" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("missing %s=off in env %v", EnvLoginExperienceV2, cmd.Env)
+	}
+
+	supports := DetectLoginSubscriptionSupport()
+	wantArgs := LoginArgs(sub, supports)
+	gotArgs := cmd.Args[1:] // skip binary
+	if strings.Join(gotArgs, " ") != strings.Join(wantArgs, " ") {
+		t.Fatalf("args = %v want %v", gotArgs, wantArgs)
+	}
+}
+
+func TestAccountSetArgs(t *testing.T) {
+	args := AccountSetArgs("00000000-0000-0000-0000-000000000002")
+	joined := strings.Join(args, " ")
+	if joined != "account set --subscription 00000000-0000-0000-0000-000000000002" {
+		t.Fatalf("AccountSetArgs = %v", args)
+	}
+}
+
+func TestSupportsLoginSubscription(t *testing.T) {
+	cases := []struct {
+		maj, min, pat int
+		want          bool
+	}{
+		{2, 86, 0, false},
+		{2, 86, 99, false},
+		{2, 87, 0, true},
+		{2, 87, 1, true},
+		{2, 88, 0, true},
+		{3, 0, 0, true},
+		{1, 99, 99, false},
+	}
+	for _, tc := range cases {
+		got := SupportsLoginSubscription(tc.maj, tc.min, tc.pat)
+		if got != tc.want {
+			t.Fatalf("%d.%d.%d: got %v want %v", tc.maj, tc.min, tc.pat, got, tc.want)
+		}
+	}
+}
+
+func TestParseAzVersionJSON(t *testing.T) {
+	maj, min, pat, err := ParseAzVersion(`{"azure-cli":"2.79.0","azure-cli-core":"2.79.0"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if maj != 2 || min != 79 || pat != 0 {
+		t.Fatalf("got %d.%d.%d", maj, min, pat)
+	}
+}
+
+func TestParseAzVersionText(t *testing.T) {
+	maj, min, pat, err := ParseAzVersion("azure-cli                         2.87.1\ncore                              2.87.1\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if maj != 2 || min != 87 || pat != 1 {
+		t.Fatalf("got %d.%d.%d", maj, min, pat)
+	}
+}
+
+func TestParseAzVersionEmpty(t *testing.T) {
+	_, _, _, err := ParseAzVersion("")
+	if err == nil {
+		t.Fatal("expected error")
 	}
 }
