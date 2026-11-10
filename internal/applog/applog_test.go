@@ -77,3 +77,24 @@ func TestInfofNoopWithoutInit(t *testing.T) {
 	Infof("should not panic %d", 1)
 	Cmd("x", nil, "", nil)
 }
+
+func TestWriterDiscardWithoutInit(t *testing.T) {
+	ResetForTest()
+	if Writer() == nil {
+		t.Fatal("expected non-nil writer")
+	}
+}
+
+func TestWriterReturnsSessionFile(t *testing.T) {
+	dir := t.TempDir()
+	SetDirForTest(dir)
+	defer ResetForTest()
+	if err := Init(); err != nil {
+		t.Fatal(err)
+	}
+	defer Close()
+	w := Writer()
+	if _, err := w.Write([]byte("redirected\n")); err != nil {
+		t.Fatal(err)
+	}
+}
