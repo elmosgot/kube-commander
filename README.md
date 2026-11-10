@@ -20,6 +20,12 @@ Read-only two-pane navigator with optional Azure AKS credential refresh.
 - Linux `az` CLI and `kubelogin` (only if you use `l` / azure blocks)
 - Run `az login` yourself first (in WSL/Cursor prefer `az login --use-device-code`)
 
+## Logging
+
+Each run writes a session log under `$XDG_STATE_HOME/kube-commander/logs` (default `~/.local/state/kube-commander/logs`; on Windows `%LOCALAPPDATA%\kube-commander\logs`). Files are named `session-YYYYMMDD-HHMMSS.log`. On startup the newest **10** session files are kept and older ones are deleted.
+
+External command stdout/stderr (`az`, `kubelogin`) is written to that log only — it is not dumped into the TUI. Interactive `az login` redirects stdout into the session log (`-o none` / `AZURE_CORE_OUTPUT=none`); stderr stays on the terminal so device-code / error messages remain visible.
+
 ## Install from release
 
 GitHub Actions publishes binaries for **Linux** (Debian/WSL), **macOS**, and **Windows** when a version tag is pushed.
