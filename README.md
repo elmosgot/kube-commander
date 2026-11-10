@@ -47,6 +47,30 @@ git push origin v0.1.0
 
 That runs the **Release** workflow and creates a GitHub Release with the binaries.
 
+## Auto draft pull requests
+
+Pushing a feature branch creates a **draft PR** into `main` via [`.github/workflows/auto-pr.yml`](.github/workflows/auto-pr.yml).
+
+**Branch naming:**
+
+| Pattern | Example | PR title/body from |
+| --- | --- | --- |
+| GitHub issue | `issues/42-add-healthcheck` | GitHub issue #42 |
+| Linear issue | `ELU-12-storage-adapter` | Linear issue ELU-12 |
+
+Branches that do not match either pattern are skipped (no PR created).
+
+**Secrets:**
+
+| Secret | Required when |
+| --- | --- |
+| `GITHUB_TOKEN` | Always (provided by Actions) |
+| `LINEAR_API_KEY` | Branch name contains a Linear id (`TEAM-123`) |
+
+Add `LINEAR_API_KEY` under repo **Settings → Secrets and variables → Actions**. Use a Linear **Personal API key** (Settings → API → Personal API keys). Paste the raw key only — no `Bearer ` prefix.
+
+**Verify:** merge this workflow to `main`, then push a branch such as `issues/1-setup` or `ELU-1-setup` and confirm a draft PR appears.
+
 ## Build from source
 
 ```bash
@@ -112,6 +136,8 @@ Ensure (`l`) always writes with `az aks get-credentials --file <resolved>` and t
   /usr/bin/az login --use-device-code
   ```
 
+- Pressing `a` runs interactive `az login` with `AZURE_CORE_LOGIN_EXPERIENCE_V2=off` on that process only (skips the subscription picker; your `az config` is unchanged). Azure CLI **≥ 2.87.0** also gets `az login -s {subscription}`; older versions use plain `az login`. After login, kube-commander always runs `az account set --subscription {subscription}` before ensuring credentials.
+
 ### Quick start
 
 1. Copy the example:
@@ -135,7 +161,7 @@ Ensure (`l`) always writes with `az aks get-credentials --file <resolved>` and t
 | `↑` / `↓` or `k` / `j` | Move cursor |
 | `Enter` / `→` | Expand pool / open namespace / deployment / pod / logs |
 | `g` | Tail last 200 lines of logs for the selected container (pod detail) |
-| `a` | Interactive `az login -s {subscription}` then ensure credentials |
+| `a` | Interactive `az login` (picker suppressed via env; `-s` when Azure CLI ≥ 2.87), then `az account set` + ensure credentials |
 | `l` | Ensure Azure credentials into `$HOME/.kube/config` (`az` + `kubelogin`) |
 | `Backspace` / `←` / `h` / `Esc` | Go up one level (logs → detail → pods → deployments → namespaces) |
 | `r` | Refresh the current right-pane view |

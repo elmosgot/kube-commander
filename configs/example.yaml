@@ -2,7 +2,7 @@
 # Copy to ~/.config/kube-commander/config.yaml and replace
 # context / namespace / azure fields with your real values from:
 #   kubectl config get-contexts -o name
-# Press `a` for az login -s {subscription}, `l` to ensure credentials
+# Press `a` for az login (+ account set), `l` to ensure credentials
 # into $HOME/.kube/config.
 pools:
   - name: pool-x
