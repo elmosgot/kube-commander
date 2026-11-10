@@ -22,6 +22,9 @@ const minLoginSubscriptionMajor, minLoginSubscriptionMinor, minLoginSubscription
 // Setting it to "off" skips the interactive subscription picker for that process only.
 const EnvLoginExperienceV2 = "AZURE_CORE_LOGIN_EXPERIENCE_V2"
 
+// EnvCoreOutput is the Azure CLI env override for core.output.
+const EnvCoreOutput = "AZURE_CORE_OUTPUT"
+
 var (
 	azVersionOnce sync.Once
 	azVersionMaj  int
@@ -76,22 +79,29 @@ func getCredentialsArgs(env config.Environment, kubeconfig string) []string {
 
 // LoginArgs returns arguments for interactive az login.
 // When supportsLoginSub is true (Azure CLI >= 2.87.0), includes -s {subscription}.
+// Always includes -o none so account JSON is not printed to the TUI.
 func LoginArgs(subscription string, supportsLoginSub bool) []string {
+	args := []string{"login"}
 	if supportsLoginSub && subscription != "" {
-		return []string{"login", "-s", subscription}
+		args = append(args, "-s", subscription)
 	}
-	return []string{"login"}
+	return append(args, "-o", "none")
 }
 
-// PrepareLoginCmd builds an interactive az login command that always suppresses
-// the subscription picker via AZURE_CORE_LOGIN_EXPERIENCE_V2=off (per-process only).
+// PrepareLoginCmd builds an interactive az login command that suppresses the
+// subscription picker and keeps stdout out of the TUI (session log + -o none).
+// Stderr is left unset so Bubble Tea can wire device-code / error messages to the terminal.
 func PrepareLoginCmd(subscription string) *exec.Cmd {
 	supportsLoginSub := DetectLoginSubscriptionSupport()
 	args := LoginArgs(subscription, supportsLoginSub)
 	azBin := ResolveAzBinary()
-	applog.Infof("starting interactive: %s %s (AZURE_CORE_LOGIN_EXPERIENCE_V2=off)", azBin, strings.Join(args, " "))
+	applog.Infof("starting interactive: %s %s (AZURE_CORE_LOGIN_EXPERIENCE_V2=off AZURE_CORE_OUTPUT=none)", azBin, strings.Join(args, " "))
 	cmd := exec.Command(azBin, args...)
-	cmd.Env = append(os.Environ(), EnvLoginExperienceV2+"=off")
+	cmd.Env = append(os.Environ(),
+		EnvLoginExperienceV2+"=off",
+		EnvCoreOutput+"=none",
+	)
+	cmd.Stdout = applog.Writer()
 	return cmd
 }
 

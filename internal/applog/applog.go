@@ -2,6 +2,7 @@ package applog
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -143,6 +144,28 @@ func Close() {
 	}
 	_ = file.Close()
 	file = nil
+}
+
+// Writer returns a writer that appends to the session log (mutex-safe).
+// Returns io.Discard when logging is not initialized.
+func Writer() io.Writer {
+	mu.Lock()
+	defer mu.Unlock()
+	if file == nil {
+		return io.Discard
+	}
+	return logWriter{}
+}
+
+type logWriter struct{}
+
+func (logWriter) Write(p []byte) (int, error) {
+	mu.Lock()
+	defer mu.Unlock()
+	if file == nil {
+		return len(p), nil
+	}
+	return file.Write(p)
 }
 
 // Infof writes a timestamped info line.

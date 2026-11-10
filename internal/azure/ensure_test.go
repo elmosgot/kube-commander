@@ -78,7 +78,7 @@ func TestResolveAzBinaryPrefersUsrBin(t *testing.T) {
 func TestLoginArgsWithSupport(t *testing.T) {
 	args := LoginArgs("00000000-0000-0000-0000-000000000002", true)
 	joined := strings.Join(args, " ")
-	if joined != "login -s 00000000-0000-0000-0000-000000000002" {
+	if joined != "login -s 00000000-0000-0000-0000-000000000002 -o none" {
 		t.Fatalf("LoginArgs = %v", args)
 	}
 }
@@ -86,7 +86,7 @@ func TestLoginArgsWithSupport(t *testing.T) {
 func TestLoginArgsWithoutSupport(t *testing.T) {
 	args := LoginArgs("00000000-0000-0000-0000-000000000002", false)
 	joined := strings.Join(args, " ")
-	if joined != "login" {
+	if joined != "login -o none" {
 		t.Fatalf("LoginArgs = %v", args)
 	}
 }
@@ -98,15 +98,24 @@ func TestPrepareLoginCmdSuppressesPicker(t *testing.T) {
 		t.Fatal("expected command")
 	}
 
-	found := false
+	foundPicker := false
+	foundOutput := false
 	for _, e := range cmd.Env {
 		if e == EnvLoginExperienceV2+"=off" {
-			found = true
-			break
+			foundPicker = true
+		}
+		if e == EnvCoreOutput+"=none" {
+			foundOutput = true
 		}
 	}
-	if !found {
+	if !foundPicker {
 		t.Fatalf("missing %s=off in env %v", EnvLoginExperienceV2, cmd.Env)
+	}
+	if !foundOutput {
+		t.Fatalf("missing %s=none in env %v", EnvCoreOutput, cmd.Env)
+	}
+	if cmd.Stdout == nil {
+		t.Fatal("expected Stdout redirected away from TTY")
 	}
 
 	supports := DetectLoginSubscriptionSupport()
