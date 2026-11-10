@@ -98,3 +98,20 @@ func TestWriterReturnsSessionFile(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestRecentCmdsFromCmd(t *testing.T) {
+	ResetForTest()
+	defer ResetForTest()
+	Cmd("az", []string{"account", "set", "--subscription", "sub"}, "", nil)
+	Cmd("kubelogin", []string{"convert-kubeconfig", "-l", "azurecli"}, "", nil)
+	got := RecentCmds()
+	if len(got) != 2 {
+		t.Fatalf("RecentCmds = %v", got)
+	}
+	if got[0] != "az account set --subscription sub" {
+		t.Fatalf("first = %q", got[0])
+	}
+	if got[1] != "kubelogin convert-kubeconfig -l azurecli" {
+		t.Fatalf("second = %q", got[1])
+	}
+}

@@ -15,6 +15,8 @@ import (
 	"github.com/elwin/kube-commander/internal/kube"
 )
 
+const cmdsPanelHeight = 8
+
 type pane int
 
 const (
@@ -121,6 +123,8 @@ type Model struct {
 	loading bool
 	err     string
 	status  string
+
+	showCmds bool
 
 	width  int
 	height int
@@ -522,6 +526,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.ensureCredentials()
 		case "a":
 			return m.azLogin()
+		case "c":
+			m.showCmds = !m.showCmds
+			return m, nil
 		case "g":
 			if m.focus == paneRight && m.rightView == viewPodDetail {
 				return m.openPodLogs()
@@ -896,19 +903,42 @@ func (m Model) rightLen() int {
 	}
 }
 
+// layoutHeights returns body and commands panel heights that fit in terminalH.
+// Chrome is header (1) + footer (1) + help (1). Never inflates past the terminal.
+func layoutHeights(terminalH int, showCmds bool) (bodyH, cmdsH int) {
+	const chrome = 3 // header + footer + help
+	avail := terminalH - chrome
+	if avail < 1 {
+		avail = 1
+	}
+	if !showCmds {
+		return avail, 0
+	}
+	cmdsH = cmdsPanelHeight
+	if cmdsH > avail-1 {
+		cmdsH = avail - 1
+	}
+	if cmdsH < 1 {
+		cmdsH = 1
+	}
+	bodyH = avail - cmdsH
+	if bodyH < 1 {
+		bodyH = 1
+		cmdsH = avail - bodyH
+		if cmdsH < 0 {
+			cmdsH = 0
+		}
+	}
+	return bodyH, cmdsH
+}
+
 // View renders the two panes and footer.
 func (m Model) View() string {
 	if m.width == 0 {
 		return "loading..."
 	}
 
-	headerH := 1
-	footerH := 2
-	helpH := 1
-	bodyH := m.height - headerH - footerH - helpH
-	if bodyH < 3 {
-		bodyH = 3
-	}
+	bodyH, cmdsH := layoutHeights(m.height, m.showCmds)
 
 	leftW := m.width / 3
 	if leftW < 24 {
@@ -926,11 +956,53 @@ func (m Model) View() string {
 	right := m.renderRight(rightW, bodyH)
 	body := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 
-	header := titleStyle.Render("kube-commander") + "  " + mutedStyle.Render(m.configPath)
+	header := titleStyle.Render("kube-commander") + "  " + mutedStyle.Render(truncate(m.configPath, m.width-20))
 	footer := m.renderFooter()
-	help := helpStyle.Render("tab focus · ↑↓ move · enter open · g logs · a az login · l ensure · backspace back · r refresh · q quit")
+	help := helpStyle.Render(truncate("tab focus · ↑↓ move · enter open · g logs · a az login · l ensure · c commands · backspace back · r refresh · q quit", m.width))
 
-	return lipgloss.JoinVertical(lipgloss.Left, header, body, footer, help)
+	parts := []string{header, body}
+	if m.showCmds && cmdsH > 0 {
+		parts = append(parts, m.renderCmdsPanel(m.width, cmdsH))
+	}
+	parts = append(parts, footer, help)
+	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+}
+
+func (m Model) renderCmdsPanel(width, height int) string {
+	inner := height - 2 // border
+	if inner < 1 {
+		inner = 1
+	}
+	var b strings.Builder
+	linesLeft := inner
+	writeLine := func(s string) {
+		if linesLeft <= 0 {
+			return
+		}
+		b.WriteString(s + "\n")
+		linesLeft--
+	}
+	writeLine(sectionStyle.Render("View"))
+	for _, line := range m.kubectlRecipes() {
+		writeLine(mutedStyle.Render(truncate(line, width-4)))
+	}
+	writeLine(sectionStyle.Render("Shell"))
+	shell := applog.RecentCmds()
+	if len(shell) == 0 {
+		writeLine(mutedStyle.Render("(no shell commands yet)"))
+	} else {
+		if len(shell) > linesLeft {
+			shell = shell[len(shell)-linesLeft:]
+		}
+		for _, line := range shell {
+			writeLine(mutedStyle.Render(truncate("$ "+line, width-4)))
+		}
+	}
+	return fitBox(paneStyle, width, height, b.String())
+}
+
+func fitBox(style lipgloss.Style, width, height int, content string) string {
+	return style.Width(width).Height(height).MaxWidth(width).MaxHeight(height).Render(content)
 }
 
 func (m Model) renderLeft(width, height int) string {
@@ -940,7 +1012,15 @@ func (m Model) renderLeft(width, height int) string {
 	}
 	var b strings.Builder
 	b.WriteString(sectionStyle.Render("Pools") + "\n")
+	innerRows := height - 2 // border top/bottom
+	if innerRows < 1 {
+		innerRows = 1
+	}
+	written := 1 // title
 	for i, row := range m.leftRows {
+		if written >= innerRows {
+			break
+		}
 		line := row.label
 		if row.isPool {
 			marker := "▾"
@@ -964,8 +1044,9 @@ func (m Model) renderLeft(width, height int) string {
 		}
 		b.WriteString(style.Width(width - 4).Render(truncate(line, width-4)))
 		b.WriteByte('\n')
+		written++
 	}
-	return border.Width(width).Height(height).Render(b.String())
+	return fitBox(border, width, height, b.String())
 }
 
 func (m Model) renderRight(width, height int) string {
@@ -1010,7 +1091,7 @@ func (m Model) renderRight(width, height int) string {
 		}
 	}
 
-	return border.Width(width).Height(height).Render(b.String())
+	return fitBox(border, width, height, b.String())
 }
 
 func (m Model) rowStyle(selected bool) lipgloss.Style {
@@ -1148,10 +1229,20 @@ func (m Model) renderFooter() string {
 	}
 	line := strings.Join(parts, "  ·  ")
 	if m.status != "" {
-		line += "  ·  " + mutedStyle.Render(m.status)
+		line += "  ·  " + m.status
 	}
 	if m.err != "" {
-		line += "  ·  " + errorStyle.Render(truncate(m.err, 80))
+		line += "  ·  " + m.err
+	}
+	// Single visual row so the height budget stays valid.
+	w := m.width
+	if w <= 0 {
+		w = 80
+	}
+	line = truncate(line, w)
+	if m.err != "" && strings.Contains(line, m.err) {
+		idx := strings.LastIndex(line, m.err)
+		return footerStyle.Render(line[:idx]) + errorStyle.Render(line[idx:])
 	}
 	return footerStyle.Render(line)
 }
