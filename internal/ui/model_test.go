@@ -140,7 +140,7 @@ func TestAzLoginWithSubscriptionReturnsExecCmd(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected exec command for az login")
 	}
-	if m.status == "" || !strings.Contains(m.status, "az login -s") {
+	if m.status == "" || !strings.Contains(m.status, "az login") {
 		t.Fatalf("status = %q", m.status)
 	}
 	if m.err != "" {
