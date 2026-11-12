@@ -11,7 +11,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 
-	"github.com/elwin/kube-commander/internal/config"
+	"github.com/elmosgot/kube-commander/internal/config"
 )
 
 const (

@@ -3,16 +3,17 @@ package ui
 import (
 	"context"
 	"fmt"
+	"os/exec"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/elwin/kube-commander/internal/applog"
-	"github.com/elwin/kube-commander/internal/azure"
-	"github.com/elwin/kube-commander/internal/config"
-	"github.com/elwin/kube-commander/internal/kube"
+	"github.com/elmosgot/kube-commander/internal/applog"
+	"github.com/elmosgot/kube-commander/internal/azure"
+	"github.com/elmosgot/kube-commander/internal/config"
+	"github.com/elmosgot/kube-commander/internal/kube"
 )
 
 const cmdsPanelHeight = 8
@@ -91,6 +92,12 @@ type ensureMsg struct {
 }
 
 type loginMsg struct {
+	poolIdx int
+	envIdx  int
+	err     error
+}
+
+type execMsg struct {
 	poolIdx int
 	envIdx  int
 	err     error
@@ -509,6 +516,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status = "logged in · ensuring credentials…"
 		return m.ensureCredentials()
 
+	case execMsg:
+		_, poolIdx, envIdx, ok := m.selectedEnv()
+		if !ok || poolIdx != msg.poolIdx || envIdx != msg.envIdx {
+			return m, nil
+		}
+		m.loading = false
+		m.status = ""
+		if msg.err != nil {
+			m.err = msg.err.Error()
+		} else {
+			m.err = ""
+		}
+		return m, nil
+
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "q", "ctrl+c":
@@ -532,6 +553,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "g":
 			if m.focus == paneRight && m.rightView == viewPodDetail {
 				return m.openPodLogs()
+			}
+		case "s":
+			if m.focus == paneRight && m.rightView == viewPodDetail {
+				return m.execIntoContainer()
 			}
 		}
 
@@ -608,6 +633,42 @@ func (m Model) openPodLogs() (tea.Model, tea.Cmd) {
 	return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
 		return m.fetchPodLogs(env, poolIdx, envIdx, ns, pod, container)
 	})
+}
+
+func (m Model) execIntoContainer() (tea.Model, tea.Cmd) {
+	env, poolIdx, envIdx, ok := m.selectedEnv()
+	if !ok || m.podDetail == nil {
+		return m, nil
+	}
+	container := m.selectedContainerName()
+	if container == "" {
+		m.err = "no container selected"
+		return m, nil
+	}
+	args := kubectlExecArgs(env, m.namespace, m.podName, container)
+	applog.Infof("starting interactive: kubectl %s", strings.Join(args, " "))
+	m.loading = true
+	m.err = ""
+	m.status = fmt.Sprintf("exec %s / %s…", m.podName, container)
+	cmd := exec.Command("kubectl", args...)
+	return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return execMsg{poolIdx: poolIdx, envIdx: envIdx, err: err}
+	})
+}
+
+// kubectlExecArgs builds kubectl exec -it … -- sh -c 'bash || sh'.
+func kubectlExecArgs(env config.Environment, namespace, pod, container string) []string {
+	args := []string{
+		"exec", "-it",
+		"--context", env.Context,
+		"--kubeconfig", config.ResolveKubeconfig(env),
+		"-n", namespace,
+		pod,
+		"-c", container,
+		"--",
+		"sh", "-c", "command -v bash >/dev/null 2>&1 && exec bash || exec sh",
+	}
+	return args
 }
 
 func (m Model) refresh() (tea.Model, tea.Cmd) {
@@ -958,7 +1019,7 @@ func (m Model) View() string {
 
 	header := titleStyle.Render("kube-commander") + "  " + mutedStyle.Render(truncate(m.configPath, m.width-20))
 	footer := m.renderFooter()
-	help := helpStyle.Render(truncate("tab focus · ↑↓ move · enter open · g logs · a az login · l ensure · c commands · backspace back · r refresh · q quit", m.width))
+	help := helpStyle.Render(truncate("tab focus · ↑↓ move · enter open · g logs · s shell · a az login · l ensure · c commands · backspace back · r refresh · q quit", m.width))
 
 	parts := []string{header, body}
 	if m.showCmds && cmdsH > 0 {

@@ -6,8 +6,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/elwin/kube-commander/internal/config"
-	"github.com/elwin/kube-commander/internal/kube"
+	"github.com/elmosgot/kube-commander/internal/config"
+	"github.com/elmosgot/kube-commander/internal/kube"
 )
 
 func testConfig() *config.Config {
@@ -45,7 +45,7 @@ func TestModelRendersPools(t *testing.T) {
 	m.height = 40
 
 	view := m.View()
-	for _, want := range []string{"kube-commander", "Pools", "pool-x", "testing", "pool-y", "namespace=app", "kubeconfig=", "a az login", "g logs", "c commands"} {
+	for _, want := range []string{"kube-commander", "Pools", "pool-x", "testing", "pool-y", "namespace=app", "kubeconfig=", "a az login", "g logs", "s shell", "c commands"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("view missing %q:\n%s", want, view)
 		}
