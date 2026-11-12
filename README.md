@@ -170,7 +170,7 @@ The bottom help line is **context-sensitive** (focus pane + current right view).
 | `↑` / `↓` or `k` / `j` | Move cursor |
 | `Enter` / `→` | Expand pool / open deployment / pod / logs |
 | `g` | Open live log follow for the selected container (last 200 lines, then stream) |
-| `f` / `/` | In the log pane: open on-the-fly filter (shown on the bottom help line); type to narrow lines; Esc clears filter (stays on logs). Global hotkeys are disabled while filtering so letters like `c`/`r` type into the query. Filter stays active while new lines stream in. |
+| `f` / `/` | In the log pane: open on-the-fly filter (shown on the bottom help line); type to narrow lines; `|` is OR (`error|warn`); a leading `!` excludes matches (e.g. `!ready`, or `!ready|health` excludes either); Esc clears filter (stays on logs). Global hotkeys are disabled while filtering so letters like `c`/`r` type into the query. Filter stays active while new lines stream in. |
 | `s` | Interactive shell into the selected container (`bash` if present, else `sh`) via `kubectl exec` |
 | `a` | Left pane: interactive `az login` (picker suppressed via env; `-s` when Azure CLI ≥ 2.87), then `az account set` + ensure credentials |
 | `l` | Left pane: ensure Azure credentials into `$HOME/.kube/config` (`az` + `kubelogin`) |
