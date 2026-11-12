@@ -4,6 +4,8 @@
 #   kubectl config get-contexts -o name
 # Press `a` for az login (+ account set), `l` to ensure credentials
 # into $HOME/.kube/config.
+# Set namespace on each environment (recommended): skips cluster-wide
+# namespace listing, which is often Forbidden under restricted RBAC.
 pools:
   - name: pool-x
     environments:
