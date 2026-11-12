@@ -111,7 +111,9 @@ func NewClient(env config.Environment) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load kubeconfig for context %q: %w", env.Context, err)
 	}
-	restCfg.Timeout = defaultTimeout
+	// Do not set restCfg.Timeout: client-go applies it to the entire request,
+	// including streaming bodies, which kills log follow after a few seconds.
+	// List/get/log one-shots already bound work with context.WithTimeout.
 
 	cs, err := kubernetes.NewForConfig(restCfg)
 	if err != nil {

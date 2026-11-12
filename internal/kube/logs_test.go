@@ -1,6 +1,9 @@
 package kube
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestPodLogOptionsFollow(t *testing.T) {
 	opts := PodLogOptions("app", 200, true)
@@ -20,5 +23,15 @@ func TestPodLogOptionsFollow(t *testing.T) {
 	}
 	if oneShot.TailLines == nil || *oneShot.TailLines != defaultTail {
 		t.Fatalf("default tail = %v", oneShot.TailLines)
+	}
+}
+
+func TestDefaultTimeoutStillUsedForUnaryCalls(t *testing.T) {
+	// Guardrails: unary ops keep their own deadlines; follow must not inherit a short HTTP Timeout.
+	if defaultTimeout < time.Second {
+		t.Fatalf("defaultTimeout = %s", defaultTimeout)
+	}
+	if logsTimeout < defaultTimeout {
+		t.Fatalf("logsTimeout = %s should be >= defaultTimeout", logsTimeout)
 	}
 }
