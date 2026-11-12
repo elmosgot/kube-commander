@@ -161,21 +161,24 @@ Ensure (`l`) always writes with `az aks get-credentials --file <resolved>` and t
 
 ## Keys
 
+The bottom help line is **context-sensitive** (focus pane + current right view). Full reference:
+
 | Key | Action |
 |-----|--------|
 | `Tab` | Switch focus between panes |
 | `↑` / `↓` or `k` / `j` | Move cursor |
 | `Enter` / `→` | Expand pool / open deployment / pod / logs |
 | `g` | Tail last 200 lines of logs for the selected container (pod detail) |
+| `f` / `/` | In the log pane: open on-the-fly filter (shown on the bottom help line); type to narrow lines; Esc clears filter (stays on logs). Global hotkeys are disabled while filtering so letters like `c`/`r` type into the query. |
 | `s` | Interactive shell into the selected container (`bash` if present, else `sh`) via `kubectl exec` |
-| `a` | Interactive `az login` (picker suppressed via env; `-s` when Azure CLI ≥ 2.87), then `az account set` + ensure credentials |
-| `l` | Ensure Azure credentials into `$HOME/.kube/config` (`az` + `kubelogin`) |
+| `a` | Left pane: interactive `az login` (picker suppressed via env; `-s` when Azure CLI ≥ 2.87), then `az account set` + ensure credentials |
+| `l` | Left pane: ensure Azure credentials into `$HOME/.kube/config` (`az` + `kubelogin`) |
 | `c` | Toggle bottom commands panel (equivalent `kubectl` for the current view + recent shell commands) |
 | `Backspace` / `←` / `h` / `Esc` | Go up one level (logs → detail → pods → deployments → left pools) |
 | `r` | Refresh the current right-pane view |
 | `q` | Quit |
 
-When a context is **unavailable**, press `a` to log in to that environment’s subscription, then credentials are refreshed automatically (same as `l`).
+When a context is **unavailable**, focus the left pane and press `a` to log in to that environment’s subscription, then credentials are refreshed automatically (same as `l`).
 
 ### Drill-down
 
