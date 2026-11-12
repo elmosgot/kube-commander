@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/elwin/kube-commander/internal/config"
+	"github.com/elmosgot/kube-commander/internal/config"
 )
 
 // kubectlRecipes returns equivalent kubectl lines for the current right-pane view.
@@ -33,9 +33,17 @@ func (m Model) kubectlRecipes() []string {
 			fmt.Sprintf("%s -n %s get pods -l '<selector from deploy/%s>'", base, shellQuote(ns), dep),
 		}
 	case viewPodDetail:
-		return []string{
+		ctr := m.selectedContainerName()
+		lines := []string{
 			fmt.Sprintf("%s -n %s get pod %s -o wide", base, shellQuote(m.namespace), shellQuote(m.podName)),
 		}
+		if ctr != "" {
+			lines = append(lines, fmt.Sprintf(
+				"%s -n %s exec -it %s -c %s -- sh -c 'command -v bash >/dev/null 2>&1 && exec bash || exec sh'",
+				base, shellQuote(m.namespace), shellQuote(m.podName), shellQuote(ctr),
+			))
+		}
+		return lines
 	case viewPodLogs:
 		ctr := m.selectedContainerName()
 		line := fmt.Sprintf("%s -n %s logs %s --tail=200", base, shellQuote(m.namespace), shellQuote(m.podName))

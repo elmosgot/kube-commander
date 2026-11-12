@@ -1,4 +1,4 @@
-module github.com/elwin/kube-commander
+module github.com/elmosgot/kube-commander
 
 go 1.26.0
 
