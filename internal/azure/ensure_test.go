@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/elwin/kube-commander/internal/config"
+	"github.com/elmosgot/kube-commander/internal/config"
 )
 
 func TestEnsureCredentialsRequiresAzure(t *testing.T) {
