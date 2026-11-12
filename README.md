@@ -9,8 +9,9 @@ k9s is excellent inside one context. kube-commander keeps the map of every pool 
 Read-only two-pane navigator with optional Azure AKS credential refresh.
 
 - Left: pools and environments from your config (friendly aliases)
-- Right: deployments → pods (with CPU/mem requests/limits) → pod detail → logs / shell
-- `a` / `l` for Azure login and credential ensure
+- Right: deployments → pods (with CPU/mem requests/limits) → pod detail → live log follow / shell
+- Auto-refresh every **5s** on list/detail views; log pane streams via the API (`Follow`, not a blocking `kubectl logs --follow`)
+- `a` / `l` for Azure login and credential ensure (left pane)
 - No mutating Kubernetes API calls
 
 ## Requirements
@@ -168,14 +169,14 @@ The bottom help line is **context-sensitive** (focus pane + current right view).
 | `Tab` | Switch focus between panes |
 | `↑` / `↓` or `k` / `j` | Move cursor |
 | `Enter` / `→` | Expand pool / open deployment / pod / logs |
-| `g` | Tail last 200 lines of logs for the selected container (pod detail) |
-| `f` / `/` | In the log pane: open on-the-fly filter (shown on the bottom help line); type to narrow lines; Esc clears filter (stays on logs). Global hotkeys are disabled while filtering so letters like `c`/`r` type into the query. |
+| `g` | Open live log follow for the selected container (last 200 lines, then stream) |
+| `f` / `/` | In the log pane: open on-the-fly filter (shown on the bottom help line); type to narrow lines; Esc clears filter (stays on logs). Global hotkeys are disabled while filtering so letters like `c`/`r` type into the query. Filter stays active while new lines stream in. |
 | `s` | Interactive shell into the selected container (`bash` if present, else `sh`) via `kubectl exec` |
 | `a` | Left pane: interactive `az login` (picker suppressed via env; `-s` when Azure CLI ≥ 2.87), then `az account set` + ensure credentials |
 | `l` | Left pane: ensure Azure credentials into `$HOME/.kube/config` (`az` + `kubelogin`) |
 | `c` | Toggle bottom commands panel (equivalent `kubectl` for the current view + recent shell commands) |
-| `Backspace` / `←` / `h` / `Esc` | Go up one level (logs → detail → pods → deployments → left pools) |
-| `r` | Refresh the current right-pane view |
+| `Backspace` / `←` / `h` / `Esc` | Go up one level (logs → detail → pods → deployments → left pools); leaving logs cancels the follow stream |
+| `r` | Refresh the current right-pane view (lists/detail); on logs, restart the follow stream |
 | `q` | Quit |
 
 When a context is **unavailable**, focus the left pane and press `a` to log in to that environment’s subscription, then credentials are refreshed automatically (same as `l`).
@@ -200,6 +201,6 @@ pool=pool-x · env=testing · deploy=my-api · pod=my-api-abc · container=app
 
 ## Next increments
 
-- Live log follow / metrics-server usage
+- Metrics-server usage (live CPU/mem)
 - Second panel locked to another environment (side-by-side compare)
 - Mutating actions (scale, restart) behind confirmation
