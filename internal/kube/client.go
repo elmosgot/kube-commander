@@ -2,11 +2,14 @@ package kube
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
@@ -40,12 +43,16 @@ type WorkloadInfo struct {
 
 // PodInfo is a summarized pod row under a deployment.
 type PodInfo struct {
-	Name     string
-	Ready    string // e.g. 1/1
-	Restarts int32
-	Status   string
-	Node     string
-	Age      string
+	Name       string
+	Ready      string // e.g. 1/1
+	Restarts   int32
+	Status     string
+	Node       string
+	Age        string
+	CPURequest string
+	CPULimit   string
+	MemRequest string
+	MemLimit   string
 }
 
 // ContainerInfo is one container in a pod detail view.
@@ -227,13 +234,18 @@ func (c *Client) ListPods(ctx context.Context, namespace, deploymentName string)
 	out := make([]PodInfo, 0, len(podList.Items))
 	for _, p := range podList.Items {
 		ready, total := podReadyCounts(p)
+		cpuReq, cpuLim, memReq, memLim := PodResources(p)
 		out = append(out, PodInfo{
-			Name:     p.Name,
-			Ready:    fmt.Sprintf("%d/%d", ready, total),
-			Restarts: podRestarts(p),
-			Status:   podStatus(p),
-			Node:     p.Spec.NodeName,
-			Age:      formatAge(now.Sub(p.CreationTimestamp.Time)),
+			Name:       p.Name,
+			Ready:      fmt.Sprintf("%d/%d", ready, total),
+			Restarts:   podRestarts(p),
+			Status:     podStatus(p),
+			Node:       p.Spec.NodeName,
+			Age:        formatAge(now.Sub(p.CreationTimestamp.Time)),
+			CPURequest: cpuReq,
+			CPULimit:   cpuLim,
+			MemRequest: memReq,
+			MemLimit:   memLim,
 		})
 	}
 	return out, nil
@@ -322,6 +334,55 @@ func resourceQuantity(list corev1.ResourceList, name corev1.ResourceName) string
 		return "-"
 	}
 	return q.String()
+}
+
+// PodResources sums CPU/memory requests and limits across app containers (not init).
+func PodResources(p corev1.Pod) (cpuReq, cpuLim, memReq, memLim string) {
+	var cpuR, cpuL, memR, memL resource.Quantity
+	hasCPUReq, hasCPULim, hasMemReq, hasMemLim := false, false, false, false
+	for _, ctr := range p.Spec.Containers {
+		if q, ok := ctr.Resources.Requests[corev1.ResourceCPU]; ok {
+			cpuR.Add(q)
+			hasCPUReq = true
+		}
+		if q, ok := ctr.Resources.Limits[corev1.ResourceCPU]; ok {
+			cpuL.Add(q)
+			hasCPULim = true
+		}
+		if q, ok := ctr.Resources.Requests[corev1.ResourceMemory]; ok {
+			memR.Add(q)
+			hasMemReq = true
+		}
+		if q, ok := ctr.Resources.Limits[corev1.ResourceMemory]; ok {
+			memL.Add(q)
+			hasMemLim = true
+		}
+	}
+	return quantityOrDash(cpuR, hasCPUReq), quantityOrDash(cpuL, hasCPULim),
+		quantityOrDash(memR, hasMemReq), quantityOrDash(memL, hasMemLim)
+}
+
+func quantityOrDash(q resource.Quantity, set bool) string {
+	if !set {
+		return "-"
+	}
+	return q.String()
+}
+
+// IsForbidden reports whether err (or a wrapped cause) is Forbidden or Unauthorized.
+func IsForbidden(err error) bool {
+	if err == nil {
+		return false
+	}
+	if apierrors.IsForbidden(err) || apierrors.IsUnauthorized(err) {
+		return true
+	}
+	var status apierrors.APIStatus
+	if errors.As(err, &status) {
+		c := status.Status().Code
+		return c == 403 || c == 401
+	}
+	return false
 }
 
 func podReadyCounts(p corev1.Pod) (ready, total int) {

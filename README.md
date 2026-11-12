@@ -9,7 +9,7 @@ k9s is excellent inside one context. kube-commander keeps the map of every pool 
 Read-only two-pane navigator with optional Azure AKS credential refresh.
 
 - Left: pools and environments from your config (friendly aliases)
-- Right: namespaces → deployments → pods → pod detail (containers, CPU/mem requests/limits) → logs
+- Right: deployments → pods (with CPU/mem requests/limits) → pod detail → logs / shell
 - `a` / `l` for Azure login and credential ensure
 - No mutating Kubernetes API calls
 
@@ -97,7 +97,7 @@ go run ./cmd/kube-commander
 | `pools[].name` | Friendly pool alias in the left pane (`pool-x`, `pool-y`) |
 | `environments[].name` | Friendly DTAP alias (`develop`, `testing`, `production`) |
 | `context` | Real kubeconfig context name (usually the AKS cluster name) |
-| `namespace` | Default app namespace opened on Enter |
+| `namespace` | App namespace opened on Enter (recommended; required if you cannot list namespaces cluster-wide) |
 | `azure.*` | How to create/refresh that context via `az aks get-credentials` |
 
 Pool + environment **are** the aliases. `context` must match `kubectl config get-contexts`.
@@ -124,11 +124,11 @@ pools:
 ```
 
 - `context` is required
-- `namespace` and `azure` are optional
-- If `azure` is set, `resource_group` and `cluster` are required; `subscription` is recommended
+- `namespace` is optional in YAML but **recommended**: without it the UI may try to list all namespaces (often Forbidden under restricted RBAC). Set it to jump straight to deployments.
+- `azure` is optional; if set, `resource_group` and `cluster` are required; `subscription` is recommended
 - Optional `kubeconfig` overrides the file used for that environment; default is always `$HOME/.kube/config`
 
-Missing contexts show as **unavailable**. Press `l` (after `az login`) to fetch credentials for the selected environment.
+Missing contexts show as **unavailable**. Press `l` (after `az login`) to fetch credentials for the selected environment. If listing namespaces is Forbidden, the UI returns to the left pane and asks you to set `environments[].namespace`.
 
 ### Azure / WSL kubeconfig
 
@@ -165,13 +165,13 @@ Ensure (`l`) always writes with `az aks get-credentials --file <resolved>` and t
 |-----|--------|
 | `Tab` | Switch focus between panes |
 | `↑` / `↓` or `k` / `j` | Move cursor |
-| `Enter` / `→` | Expand pool / open namespace / deployment / pod / logs |
+| `Enter` / `→` | Expand pool / open deployment / pod / logs |
 | `g` | Tail last 200 lines of logs for the selected container (pod detail) |
 | `s` | Interactive shell into the selected container (`bash` if present, else `sh`) via `kubectl exec` |
 | `a` | Interactive `az login` (picker suppressed via env; `-s` when Azure CLI ≥ 2.87), then `az account set` + ensure credentials |
 | `l` | Ensure Azure credentials into `$HOME/.kube/config` (`az` + `kubelogin`) |
 | `c` | Toggle bottom commands panel (equivalent `kubectl` for the current view + recent shell commands) |
-| `Backspace` / `←` / `h` / `Esc` | Go up one level (logs → detail → pods → deployments → namespaces) |
+| `Backspace` / `←` / `h` / `Esc` | Go up one level (logs → detail → pods → deployments → left pools) |
 | `r` | Refresh the current right-pane view |
 | `q` | Quit |
 
