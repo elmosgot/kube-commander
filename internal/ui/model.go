@@ -358,8 +358,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.loading = false
-		m.rightView = viewNamespaces
-		m.namespace = ""
 		m.deployment = ""
 		m.podName = ""
 		m.podDetail = nil
@@ -367,10 +365,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.pods = nil
 		m.rightCursor = 0
 		if msg.err != nil {
-			m.err = msg.err.Error()
 			m.namespaces = nil
+			if kube.IsForbidden(msg.err) {
+				m.err = "cannot list namespaces (RBAC). Set environments[].namespace in config, then reopen the environment."
+				m.focus = paneLeft
+				m.namespace = ""
+				m.status = ""
+				return m, nil
+			}
+			m.rightView = viewNamespaces
+			m.namespace = ""
+			m.err = msg.err.Error()
 			return m, nil
 		}
+		m.rightView = viewNamespaces
+		m.namespace = ""
 		m.err = ""
 		m.namespaces = msg.items
 		return m, nil
@@ -932,14 +941,15 @@ func (m Model) backRight() (tea.Model, tea.Cmd) {
 			return m.fetchWorkloads(env, poolIdx, envIdx, ns)
 		})
 	case viewWorkloads:
-		m.rightView = viewNamespaces
-		m.namespace = ""
+		// Always return to the left pools pane (skip namespaces; often Forbidden).
 		m.workloads = nil
+		m.namespace = ""
 		m.rightCursor = 0
 		m.err = ""
 		m.status = ""
-		m.loading = true
-		return m, tea.Batch(m.spinner.Tick, m.loadNamespaces())
+		m.loading = false
+		m.focus = paneLeft
+		return m, nil
 	default:
 		m.focus = paneLeft
 		return m, nil
@@ -1196,8 +1206,10 @@ func (m Model) renderPodRows(b *strings.Builder, width int) {
 		return
 	}
 	for i, p := range m.pods {
-		line := fmt.Sprintf("%-36s  %-5s  restarts %-3d  %-12s  %s",
-			p.Name, p.Ready, p.Restarts, p.Status, p.Age)
+		cpu := p.CPURequest + "/" + p.CPULimit
+		mem := p.MemRequest + "/" + p.MemLimit
+		line := fmt.Sprintf("%-28s  %-5s  r %-3d  %-10s  cpu %-12s  mem %-14s  %s",
+			p.Name, p.Ready, p.Restarts, p.Status, cpu, mem, p.Age)
 		b.WriteString(m.rowStyle(i == m.rightCursor).Width(width - 4).Render(truncate(line, width-4)))
 		b.WriteByte('\n')
 	}
