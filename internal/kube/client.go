@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"sync"
 	"time"
 
@@ -305,24 +306,41 @@ func (c *Client) GetPod(ctx context.Context, namespace, name string) (*PodDetail
 	}, nil
 }
 
+// PodLogOptions builds PodLogOptions for a one-shot or follow request.
+func PodLogOptions(container string, tailLines int, follow bool) *corev1.PodLogOptions {
+	if tailLines <= 0 {
+		tailLines = defaultTail
+	}
+	tail := int64(tailLines)
+	return &corev1.PodLogOptions{
+		Container: container,
+		TailLines: &tail,
+		Follow:    follow,
+	}
+}
+
 // GetPodLogs returns the last tailLines of logs for a container (default 200).
 func (c *Client) GetPodLogs(ctx context.Context, namespace, pod, container string, tailLines int) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, logsTimeout)
 	defer cancel()
 
-	if tailLines <= 0 {
-		tailLines = defaultTail
-	}
-	tail := int64(tailLines)
-	opts := &corev1.PodLogOptions{
-		Container: container,
-		TailLines: &tail,
-	}
+	opts := PodLogOptions(container, tailLines, false)
 	raw, err := c.cs.CoreV1().Pods(namespace).GetLogs(pod, opts).DoRaw(ctx)
 	if err != nil {
 		return "", fmt.Errorf("logs for %s/%s: %w", pod, container, err)
 	}
 	return string(raw), nil
+}
+
+// FollowPodLogs opens a streaming log reader (TailLines then Follow).
+// Caller must Close the reader and cancel ctx to stop the stream.
+func (c *Client) FollowPodLogs(ctx context.Context, namespace, pod, container string, tailLines int) (io.ReadCloser, error) {
+	opts := PodLogOptions(container, tailLines, true)
+	stream, err := c.cs.CoreV1().Pods(namespace).GetLogs(pod, opts).Stream(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("follow logs for %s/%s: %w", pod, container, err)
+	}
+	return stream, nil
 }
 
 func resourceQuantity(list corev1.ResourceList, name corev1.ResourceName) string {

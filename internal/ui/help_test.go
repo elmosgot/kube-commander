@@ -42,8 +42,8 @@ func TestRenderHelpContextSensitive(t *testing.T) {
 			name:    "pod logs",
 			focus:   paneRight,
 			view:    viewPodLogs,
-			want:    []string{"f|/ filter", "backspace back"},
-			notWant: []string{"a az login", "g logs", "s shell", "enter open"},
+			want:    []string{"f|/ filter", "r restart follow", "backspace back"},
+			notWant: []string{"a az login", "g logs", "s shell", "enter open", "r refresh"},
 		},
 		{
 			name:   "filter active",

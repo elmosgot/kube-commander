@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
@@ -16,7 +17,10 @@ import (
 	"github.com/elmosgot/kube-commander/internal/kube"
 )
 
-const cmdsPanelHeight = 8
+const (
+	cmdsPanelHeight     = 8
+	autoRefreshInterval = 5 * time.Second
+)
 
 type pane int
 
@@ -47,6 +51,7 @@ type namespacesMsg struct {
 	envIdx  int
 	items   []kube.NamespaceInfo
 	err     error
+	silent  bool
 }
 
 type workloadsMsg struct {
@@ -55,6 +60,7 @@ type workloadsMsg struct {
 	namespace string
 	items     []kube.WorkloadInfo
 	err       error
+	silent    bool
 }
 
 type podsMsg struct {
@@ -64,6 +70,7 @@ type podsMsg struct {
 	deployment string
 	items      []kube.PodInfo
 	err        error
+	silent     bool
 }
 
 type podDetailMsg struct {
@@ -73,17 +80,10 @@ type podDetailMsg struct {
 	pod       string
 	detail    *kube.PodDetail
 	err       error
+	silent    bool
 }
 
-type podLogsMsg struct {
-	poolIdx   int
-	envIdx    int
-	namespace string
-	pod       string
-	container string
-	text      string
-	err       error
-}
+type autoRefreshMsg struct{}
 
 type ensureMsg struct {
 	poolIdx int
@@ -128,10 +128,14 @@ type Model struct {
 	logScroll       int
 	logFilterActive bool
 	logFilter       string
+	logStickBottom  bool
+	logFollowID     int
+	logFollowCancel context.CancelFunc
 
-	loading bool
-	err     string
-	status  string
+	loading         bool
+	autoRefreshBusy bool
+	err             string
+	status          string
 
 	showCmds bool
 
@@ -250,9 +254,28 @@ func (m Model) selectedContainerName() string {
 	return m.podDetail.Containers[m.containerIdx].Name
 }
 
-// Init starts the spinner and loads the initially selected environment.
+// Init starts the spinner, loads the initially selected environment, and arms auto-refresh.
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.spinner.Tick, m.openSelectedEnv())
+	return tea.Batch(m.spinner.Tick, m.openSelectedEnv(), scheduleAutoRefresh())
+}
+
+func scheduleAutoRefresh() tea.Cmd {
+	return tea.Tick(autoRefreshInterval, func(time.Time) tea.Msg {
+		return autoRefreshMsg{}
+	})
+}
+
+func clampIndex(cur, length int) int {
+	if length <= 0 {
+		return 0
+	}
+	if cur < 0 {
+		return 0
+	}
+	if cur >= length {
+		return length - 1
+	}
+	return cur
 }
 
 func (m Model) openSelectedEnv() tea.Cmd {
@@ -332,15 +355,6 @@ func (m Model) fetchPodDetail(env config.Environment, poolIdx, envIdx int, names
 	return podDetailMsg{poolIdx: poolIdx, envIdx: envIdx, namespace: namespace, pod: pod, detail: detail, err: err}
 }
 
-func (m Model) fetchPodLogs(env config.Environment, poolIdx, envIdx int, namespace, pod, container string) tea.Msg {
-	client, err := kube.NewClient(env)
-	if err != nil {
-		return podLogsMsg{poolIdx: poolIdx, envIdx: envIdx, namespace: namespace, pod: pod, container: container, err: err}
-	}
-	text, err := client.GetPodLogs(context.Background(), namespace, pod, container, 200)
-	return podLogsMsg{poolIdx: poolIdx, envIdx: envIdx, namespace: namespace, pod: pod, container: container, text: text, err: err}
-}
-
 // Update handles keyboard and async messages.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -354,18 +368,41 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
 
+	case autoRefreshMsg:
+		next := scheduleAutoRefresh()
+		if m.rightView == viewPodLogs || m.loading || m.autoRefreshBusy {
+			return m, next
+		}
+		cmd := m.quietRefreshCmd()
+		if cmd == nil {
+			return m, next
+		}
+		m.autoRefreshBusy = true
+		return m, tea.Batch(next, cmd)
+
 	case namespacesMsg:
 		_, poolIdx, envIdx, ok := m.selectedEnv()
 		if !ok || poolIdx != msg.poolIdx || envIdx != msg.envIdx {
+			if msg.silent {
+				m.autoRefreshBusy = false
+			}
 			return m, nil
 		}
+		if msg.silent {
+			m.autoRefreshBusy = false
+			if m.rightView != viewNamespaces {
+				return m, nil
+			}
+		}
 		m.loading = false
-		m.deployment = ""
-		m.podName = ""
-		m.podDetail = nil
-		m.workloads = nil
-		m.pods = nil
-		m.rightCursor = 0
+		if !msg.silent {
+			m.deployment = ""
+			m.podName = ""
+			m.podDetail = nil
+			m.workloads = nil
+			m.pods = nil
+			m.rightCursor = 0
+		}
 		if msg.err != nil {
 			m.namespaces = nil
 			if kube.IsForbidden(msg.err) {
@@ -384,12 +421,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.namespace = ""
 		m.err = ""
 		m.namespaces = msg.items
+		m.rightCursor = clampIndex(m.rightCursor, len(m.namespaces))
 		return m, nil
 
 	case workloadsMsg:
 		_, poolIdx, envIdx, ok := m.selectedEnv()
 		if !ok || poolIdx != msg.poolIdx || envIdx != msg.envIdx {
+			if msg.silent {
+				m.autoRefreshBusy = false
+			}
 			return m, nil
+		}
+		if msg.silent {
+			m.autoRefreshBusy = false
+			if m.rightView != viewWorkloads {
+				return m, nil
+			}
 		}
 		if m.rightView == viewWorkloads && m.namespace != "" && m.namespace != msg.namespace {
 			return m, nil
@@ -397,11 +444,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		m.rightView = viewWorkloads
 		m.namespace = msg.namespace
-		m.deployment = ""
-		m.podName = ""
-		m.podDetail = nil
-		m.pods = nil
-		m.rightCursor = 0
+		if !msg.silent {
+			m.deployment = ""
+			m.podName = ""
+			m.podDetail = nil
+			m.pods = nil
+			m.rightCursor = 0
+		}
 		if msg.err != nil {
 			m.err = msg.err.Error()
 			m.workloads = nil
@@ -409,20 +458,32 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.err = ""
 		m.workloads = msg.items
+		m.rightCursor = clampIndex(m.rightCursor, len(m.workloads))
 		return m, nil
 
 	case podsMsg:
 		_, poolIdx, envIdx, ok := m.selectedEnv()
 		if !ok || poolIdx != msg.poolIdx || envIdx != msg.envIdx {
+			if msg.silent {
+				m.autoRefreshBusy = false
+			}
 			return m, nil
+		}
+		if msg.silent {
+			m.autoRefreshBusy = false
+			if m.rightView != viewPods {
+				return m, nil
+			}
 		}
 		m.loading = false
 		m.rightView = viewPods
 		m.namespace = msg.namespace
 		m.deployment = msg.deployment
-		m.podName = ""
-		m.podDetail = nil
-		m.rightCursor = 0
+		if !msg.silent {
+			m.podName = ""
+			m.podDetail = nil
+			m.rightCursor = 0
+		}
 		if msg.err != nil {
 			m.err = msg.err.Error()
 			m.pods = nil
@@ -430,21 +491,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.err = ""
 		m.pods = msg.items
+		m.rightCursor = clampIndex(m.rightCursor, len(m.pods))
 		return m, nil
 
 	case podDetailMsg:
 		_, poolIdx, envIdx, ok := m.selectedEnv()
 		if !ok || poolIdx != msg.poolIdx || envIdx != msg.envIdx {
+			if msg.silent {
+				m.autoRefreshBusy = false
+			}
 			return m, nil
+		}
+		if msg.silent {
+			m.autoRefreshBusy = false
+			if m.rightView != viewPodDetail {
+				return m, nil
+			}
 		}
 		m.loading = false
 		m.rightView = viewPodDetail
 		m.namespace = msg.namespace
 		m.podName = msg.pod
-		m.containerIdx = 0
-		m.logText = ""
-		m.logScroll = 0
-		m.clearLogFilter()
+		if !msg.silent {
+			m.containerIdx = 0
+			m.logText = ""
+			m.logScroll = 0
+			m.clearLogFilter()
+		}
 		if msg.err != nil {
 			m.err = msg.err.Error()
 			m.podDetail = nil
@@ -452,23 +525,46 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.err = ""
 		m.podDetail = msg.detail
+		if m.podDetail != nil {
+			m.containerIdx = clampIndex(m.containerIdx, len(m.podDetail.Containers))
+		}
 		return m, nil
 
-	case podLogsMsg:
-		_, poolIdx, envIdx, ok := m.selectedEnv()
-		if !ok || poolIdx != msg.poolIdx || envIdx != msg.envIdx {
+	case logChunkMsg:
+		if msg.id != m.logFollowID {
+			if msg.ch != nil {
+				return m, listenLogFollow(msg.ch)
+			}
+			return m, nil
+		}
+		if m.rightView != viewPodLogs {
+			return m, listenLogFollow(msg.ch)
+		}
+		m.loading = false
+		m.status = "following logs…"
+		if m.logText == "" {
+			m.logText = msg.text
+		} else if strings.HasSuffix(m.logText, "\n") {
+			m.logText += msg.text
+		} else {
+			m.logText += "\n" + msg.text
+		}
+		if m.logStickBottom {
+			m.scrollLogsToBottom()
+		}
+		return m, listenLogFollow(msg.ch)
+
+	case logFollowDoneMsg:
+		if msg.id != m.logFollowID {
 			return m, nil
 		}
 		m.loading = false
-		if msg.err != nil {
+		if msg.err != nil && m.rightView == viewPodLogs {
 			m.err = msg.err.Error()
-			return m, nil
+			m.status = ""
+		} else if m.rightView == viewPodLogs {
+			m.status = ""
 		}
-		m.err = ""
-		m.rightView = viewPodLogs
-		m.logText = msg.text
-		m.logScroll = 0
-		m.clearLogFilter()
 		return m, nil
 
 	case ensureMsg:
@@ -548,6 +644,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Only ctrl+c still quits so letters like q/r/c can be typed into the query.
 		if m.rightView == viewPodLogs && m.logFilterActive {
 			if msg.String() == "ctrl+c" {
+				m.stopLogFollow()
 				return m, tea.Quit
 			}
 			return m.updateLogFilter(msg)
@@ -555,6 +652,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		switch msg.String() {
 		case "q", "ctrl+c":
+			m.stopLogFollow()
 			return m, tea.Quit
 		case "tab":
 			if m.focus == paneLeft {
@@ -642,23 +740,7 @@ func (m Model) azLogin() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) openPodLogs() (tea.Model, tea.Cmd) {
-	env, poolIdx, envIdx, ok := m.selectedEnv()
-	if !ok || m.podDetail == nil {
-		return m, nil
-	}
-	container := m.selectedContainerName()
-	if container == "" {
-		m.err = "no container selected"
-		return m, nil
-	}
-	m.loading = true
-	m.err = ""
-	m.status = "fetching logs…"
-	ns := m.namespace
-	pod := m.podName
-	return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
-		return m.fetchPodLogs(env, poolIdx, envIdx, ns, pod, container)
-	})
+	return m.startLogFollow()
 }
 
 func (m Model) execIntoContainer() (tea.Model, tea.Cmd) {
@@ -702,32 +784,88 @@ func (m Model) refresh() (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
+	if m.rightView == viewPodLogs {
+		return m.startLogFollow()
+	}
 	m.loading = true
 	m.err = ""
 	m.status = ""
 	switch m.rightView {
-	case viewPodLogs:
-		ns, pod, ctr := m.namespace, m.podName, m.selectedContainerName()
-		return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
-			return m.fetchPodLogs(env, poolIdx, envIdx, ns, pod, ctr)
-		})
 	case viewPodDetail:
 		ns, pod := m.namespace, m.podName
 		return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
-			return m.fetchPodDetail(env, poolIdx, envIdx, ns, pod)
+			msg := m.fetchPodDetail(env, poolIdx, envIdx, ns, pod).(podDetailMsg)
+			msg.silent = true
+			return msg
 		})
 	case viewPods:
 		ns, dep := m.namespace, m.deployment
 		return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
-			return m.fetchPods(env, poolIdx, envIdx, ns, dep)
+			msg := m.fetchPods(env, poolIdx, envIdx, ns, dep).(podsMsg)
+			msg.silent = true
+			return msg
 		})
 	case viewWorkloads:
 		ns := m.namespace
 		return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
-			return m.fetchWorkloads(env, poolIdx, envIdx, ns)
+			msg := m.fetchWorkloads(env, poolIdx, envIdx, ns).(workloadsMsg)
+			msg.silent = true
+			return msg
 		})
 	default:
-		return m, tea.Batch(m.spinner.Tick, m.loadNamespaces())
+		return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
+			msg := m.fetchNamespaces(env, poolIdx, envIdx).(namespacesMsg)
+			msg.silent = true
+			return msg
+		})
+	}
+}
+
+// quietRefreshCmd re-fetches the current right view without a spinner/loading flash.
+func (m Model) quietRefreshCmd() tea.Cmd {
+	env, poolIdx, envIdx, ok := m.selectedEnv()
+	if !ok || !m.available[envKey(env)] {
+		return nil
+	}
+	switch m.rightView {
+	case viewPodDetail:
+		if m.podName == "" {
+			return nil
+		}
+		ns, pod := m.namespace, m.podName
+		return func() tea.Msg {
+			msg := m.fetchPodDetail(env, poolIdx, envIdx, ns, pod).(podDetailMsg)
+			msg.silent = true
+			return msg
+		}
+	case viewPods:
+		if m.namespace == "" || m.deployment == "" {
+			return nil
+		}
+		ns, dep := m.namespace, m.deployment
+		return func() tea.Msg {
+			msg := m.fetchPods(env, poolIdx, envIdx, ns, dep).(podsMsg)
+			msg.silent = true
+			return msg
+		}
+	case viewWorkloads:
+		if m.namespace == "" {
+			return nil
+		}
+		ns := m.namespace
+		return func() tea.Msg {
+			msg := m.fetchWorkloads(env, poolIdx, envIdx, ns).(workloadsMsg)
+			msg.silent = true
+			return msg
+		}
+	case viewNamespaces:
+		return func() tea.Msg {
+			msg := m.fetchNamespaces(env, poolIdx, envIdx).(namespacesMsg)
+			msg.silent = true
+			return msg
+		}
+	default:
+		return nil
 	}
 }
 
@@ -754,7 +892,9 @@ func (m Model) updateLeft(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		env := m.cfg.Pools[row.poolIdx].Environments[row.envIdx]
+		m.stopLogFollow()
 		m.loading = true
+		m.autoRefreshBusy = false
 		m.err = ""
 		m.status = ""
 		m.namespaces = nil
@@ -763,6 +903,9 @@ func (m Model) updateLeft(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.podDetail = nil
 		m.deployment = ""
 		m.podName = ""
+		m.logText = ""
+		m.logScroll = 0
+		m.clearLogFilter()
 		m.rightCursor = 0
 		m.focus = paneRight
 		if env.Namespace != "" {
@@ -874,13 +1017,33 @@ func (m Model) filteredLogLines() []string {
 	return out
 }
 
+// logVisibleCount is how many log lines fit in the right pane (matches renderPodLogs).
+func (m Model) logVisibleCount() int {
+	bodyH, _ := layoutHeights(m.height, m.showCmds)
+	visible := bodyH - 4
+	if visible < 3 {
+		visible = 3
+	}
+	return visible
+}
+
+func (m Model) maxLogScroll() int {
+	n := len(m.filteredLogLines())
+	maxStart := n - m.logVisibleCount()
+	if maxStart < 0 {
+		return 0
+	}
+	return maxStart
+}
+
+func (m *Model) scrollLogsToBottom() {
+	m.logScroll = m.maxLogScroll()
+	m.logStickBottom = true
+}
+
 func (m Model) moveRight(delta int) (tea.Model, tea.Cmd) {
 	if m.rightView == viewPodLogs {
-		lines := m.filteredLogLines()
-		maxScroll := len(lines) - 1
-		if maxScroll < 0 {
-			maxScroll = 0
-		}
+		maxScroll := m.maxLogScroll()
 		m.logScroll += delta
 		if m.logScroll < 0 {
 			m.logScroll = 0
@@ -888,6 +1051,7 @@ func (m Model) moveRight(delta int) (tea.Model, tea.Cmd) {
 		if m.logScroll > maxScroll {
 			m.logScroll = maxScroll
 		}
+		m.logStickBottom = m.logScroll >= maxScroll
 		return m, nil
 	}
 	if m.rightView == viewPodDetail {
@@ -979,9 +1143,11 @@ func (m Model) openRight() (tea.Model, tea.Cmd) {
 func (m Model) backRight() (tea.Model, tea.Cmd) {
 	switch m.rightView {
 	case viewPodLogs:
+		m.stopLogFollow()
 		m.rightView = viewPodDetail
 		m.logText = ""
 		m.logScroll = 0
+		m.logStickBottom = true
 		m.clearLogFilter()
 		m.err = ""
 		m.status = ""
@@ -1126,18 +1292,17 @@ func (m Model) renderHelp() string {
 
 	parts := []string{"↑↓ move", "tab focus"}
 	if m.focus == paneLeft {
-		parts = append(parts, "enter open", "a az login", "l ensure")
+		parts = append(parts, "enter open", "a az login", "l ensure", "c commands", "r refresh", "q quit")
 	} else {
 		switch m.rightView {
 		case viewPodDetail:
-			parts = append(parts, "g logs", "s shell", "backspace back")
+			parts = append(parts, "g logs", "s shell", "backspace back", "c commands", "r refresh", "q quit")
 		case viewPodLogs:
-			parts = append(parts, "f|/ filter", "backspace back")
+			parts = append(parts, "f|/ filter", "r restart follow", "backspace back", "c commands", "q quit")
 		default:
-			parts = append(parts, "enter open", "backspace back")
+			parts = append(parts, "enter open", "backspace back", "c commands", "r refresh", "q quit")
 		}
 	}
-	parts = append(parts, "c commands", "r refresh", "q quit")
 	return helpStyle.Render(truncate(strings.Join(parts, " · "), m.width))
 }
 
@@ -1352,12 +1517,16 @@ func (m Model) renderPodLogs(b *strings.Builder, width, height int) {
 	if visible < 3 {
 		visible = 3
 	}
+	maxStart := len(lines) - visible
+	if maxStart < 0 {
+		maxStart = 0
+	}
 	start := m.logScroll
 	if start < 0 {
 		start = 0
 	}
-	if start > len(lines) {
-		start = len(lines)
+	if start > maxStart {
+		start = maxStart
 	}
 	end := start + visible
 	if end > len(lines) {
