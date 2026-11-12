@@ -124,8 +124,10 @@ type Model struct {
 	podName     string
 	podDetail   *kube.PodDetail
 	containerIdx int
-	logText     string
-	logScroll   int
+	logText         string
+	logScroll       int
+	logFilterActive bool
+	logFilter       string
 
 	loading bool
 	err     string
@@ -442,6 +444,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.containerIdx = 0
 		m.logText = ""
 		m.logScroll = 0
+		m.clearLogFilter()
 		if msg.err != nil {
 			m.err = msg.err.Error()
 			m.podDetail = nil
@@ -465,6 +468,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.rightView = viewPodLogs
 		m.logText = msg.text
 		m.logScroll = 0
+		m.clearLogFilter()
 		return m, nil
 
 	case ensureMsg:
@@ -540,6 +544,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		// While filtering logs, capture keys before global hotkeys (r/c/a/…).
+		// Only ctrl+c still quits so letters like q/r/c can be typed into the query.
+		if m.rightView == viewPodLogs && m.logFilterActive {
+			if msg.String() == "ctrl+c" {
+				return m, tea.Quit
+			}
+			return m.updateLogFilter(msg)
+		}
+
 		switch msg.String() {
 		case "q", "ctrl+c":
 			return m, tea.Quit
@@ -553,9 +566,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "r":
 			return m.refresh()
 		case "l":
-			return m.ensureCredentials()
+			if m.focus == paneLeft {
+				return m.ensureCredentials()
+			}
 		case "a":
-			return m.azLogin()
+			if m.focus == paneLeft {
+				return m.azLogin()
+			}
 		case "c":
 			m.showCmds = !m.showCmds
 			return m, nil
@@ -779,6 +796,9 @@ func (m Model) updateLeft(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) updateRight(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.rightView == viewPodLogs && m.logFilterActive {
+		return m.updateLogFilter(msg)
+	}
 	switch msg.String() {
 	case "up", "k":
 		return m.moveRight(-1)
@@ -790,15 +810,73 @@ func (m Model) updateRight(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.moveRight(10)
 	case "enter", "right":
 		return m.openRight()
+	case "f", "/":
+		if m.rightView == viewPodLogs {
+			m.logFilterActive = true
+			m.logFilter = ""
+			m.logScroll = 0
+			return m, nil
+		}
 	case "backspace", "left", "h", "esc":
 		return m.backRight()
 	}
 	return m, nil
 }
 
+func (m Model) updateLogFilter(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.clearLogFilter()
+		m.logScroll = 0
+		return m, nil
+	case "backspace":
+		if m.logFilter != "" {
+			r := []rune(m.logFilter)
+			m.logFilter = string(r[:len(r)-1])
+			m.logScroll = 0
+		}
+		return m, nil
+	case "up":
+		return m.moveRight(-1)
+	case "down":
+		return m.moveRight(1)
+	case "pgup":
+		return m.moveRight(-10)
+	case "pgdown":
+		return m.moveRight(10)
+	}
+	// Letters (including j/k) append to the query — only arrows scroll while filtering.
+	if msg.Type == tea.KeyRunes && len(msg.Runes) > 0 {
+		m.logFilter += string(msg.Runes)
+		m.logScroll = 0
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m *Model) clearLogFilter() {
+	m.logFilterActive = false
+	m.logFilter = ""
+}
+
+func (m Model) filteredLogLines() []string {
+	lines := strings.Split(m.logText, "\n")
+	if !m.logFilterActive || m.logFilter == "" {
+		return lines
+	}
+	q := strings.ToLower(m.logFilter)
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if strings.Contains(strings.ToLower(line), q) {
+			out = append(out, line)
+		}
+	}
+	return out
+}
+
 func (m Model) moveRight(delta int) (tea.Model, tea.Cmd) {
 	if m.rightView == viewPodLogs {
-		lines := strings.Split(m.logText, "\n")
+		lines := m.filteredLogLines()
 		maxScroll := len(lines) - 1
 		if maxScroll < 0 {
 			maxScroll = 0
@@ -904,6 +982,7 @@ func (m Model) backRight() (tea.Model, tea.Cmd) {
 		m.rightView = viewPodDetail
 		m.logText = ""
 		m.logScroll = 0
+		m.clearLogFilter()
 		m.err = ""
 		m.status = ""
 		return m, nil
@@ -968,7 +1047,7 @@ func (m Model) rightLen() int {
 		}
 		return len(m.podDetail.Containers)
 	case viewPodLogs:
-		return len(strings.Split(m.logText, "\n"))
+		return len(m.filteredLogLines())
 	default:
 		return len(m.namespaces)
 	}
@@ -1029,7 +1108,7 @@ func (m Model) View() string {
 
 	header := titleStyle.Render("kube-commander") + "  " + mutedStyle.Render(truncate(m.configPath, m.width-20))
 	footer := m.renderFooter()
-	help := helpStyle.Render(truncate("tab focus · ↑↓ move · enter open · g logs · s shell · a az login · l ensure · c commands · backspace back · r refresh · q quit", m.width))
+	help := m.renderHelp()
 
 	parts := []string{header, body}
 	if m.showCmds && cmdsH > 0 {
@@ -1037,6 +1116,29 @@ func (m Model) View() string {
 	}
 	parts = append(parts, footer, help)
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+}
+
+func (m Model) renderHelp() string {
+	if m.rightView == viewPodLogs && m.logFilterActive {
+		line := "Filter: " + m.logFilter + "█  ·  esc clear · ↑↓ scroll"
+		return helpStyle.Render(truncate(line, m.width))
+	}
+
+	parts := []string{"↑↓ move", "tab focus"}
+	if m.focus == paneLeft {
+		parts = append(parts, "enter open", "a az login", "l ensure")
+	} else {
+		switch m.rightView {
+		case viewPodDetail:
+			parts = append(parts, "g logs", "s shell", "backspace back")
+		case viewPodLogs:
+			parts = append(parts, "f|/ filter", "backspace back")
+		default:
+			parts = append(parts, "enter open", "backspace back")
+		}
+	}
+	parts = append(parts, "c commands", "r refresh", "q quit")
+	return helpStyle.Render(truncate(strings.Join(parts, " · "), m.width))
 }
 
 func (m Model) renderCmdsPanel(width, height int) string {
@@ -1244,8 +1346,8 @@ func (m Model) renderPodLogs(b *strings.Builder, width, height int) {
 		b.WriteString(errorStyle.Render(truncate(m.err, width-4)) + "\n")
 		return
 	}
-	lines := strings.Split(m.logText, "\n")
-	// Reserve title line already written; keep a few rows of padding inside the border.
+	lines := m.filteredLogLines()
+	// Reserve title line already written; keep padding inside the border.
 	visible := height - 4
 	if visible < 3 {
 		visible = 3
@@ -1261,8 +1363,12 @@ func (m Model) renderPodLogs(b *strings.Builder, width, height int) {
 	if end > len(lines) {
 		end = len(lines)
 	}
-	if len(lines) == 0 || (len(lines) == 1 && lines[0] == "") {
+	if len(lines) == 0 || (len(lines) == 1 && lines[0] == "" && m.logFilter == "") {
 		b.WriteString(mutedStyle.Render("no log output") + "\n")
+		return
+	}
+	if len(lines) == 0 {
+		b.WriteString(mutedStyle.Render("no matching lines") + "\n")
 		return
 	}
 	for _, line := range lines[start:end] {
