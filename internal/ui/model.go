@@ -364,6 +364,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		return m, nil
 
+	case tea.MouseMsg:
+		if m.rightView != viewPodLogs {
+			return m, nil
+		}
+		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft && msg.Ctrl {
+			if idx, ok := m.logLogicalIdxAtScreen(msg.X, msg.Y); ok {
+				m.copyLogLogicalLine(idx)
+			}
+		}
+		return m, nil
+
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
@@ -961,6 +972,13 @@ func (m Model) updateRight(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.logScroll = 0
 			return m, nil
 		}
+	case "y":
+		if m.rightView == viewPodLogs {
+			if idx, ok := logLineAtVisualOffset(m.visualLogRows(), m.logScroll, 0); ok {
+				m.copyLogLogicalLine(idx)
+			}
+			return m, nil
+		}
 	case "backspace", "left", "h", "esc":
 		return m.backRight()
 	}
@@ -1051,7 +1069,7 @@ func (m Model) filteredLogLines() []string {
 	return out
 }
 
-// logVisibleCount is how many log lines fit in the right pane (matches renderPodLogs).
+// logVisibleCount is how many visual log rows fit in the right pane (matches renderPodLogs).
 func (m Model) logVisibleCount() int {
 	bodyH, _ := layoutHeights(m.height, m.showCmds)
 	visible := bodyH - 4
@@ -1061,13 +1079,80 @@ func (m Model) logVisibleCount() int {
 	return visible
 }
 
+func (m Model) paneWidths() (leftW, rightW int) {
+	leftW = m.width / 3
+	if leftW < 24 {
+		leftW = 24
+	}
+	if leftW > 40 {
+		leftW = 40
+	}
+	rightW = m.width - leftW - 1
+	if rightW < 20 {
+		rightW = 20
+	}
+	return leftW, rightW
+}
+
+func (m Model) logContentWidth() int {
+	_, rightW := m.paneWidths()
+	w := rightW - 4
+	if w < 1 {
+		return 1
+	}
+	return w
+}
+
+func (m Model) visualLogRows() []visualLogRow {
+	return buildVisualLogRows(m.filteredLogLines(), m.logContentWidth())
+}
+
 func (m Model) maxLogScroll() int {
-	n := len(m.filteredLogLines())
+	n := len(m.visualLogRows())
 	maxStart := n - m.logVisibleCount()
 	if maxStart < 0 {
 		return 0
 	}
 	return maxStart
+}
+
+// copyLogLogicalLine copies the expanded text of a filtered logical line.
+func (m *Model) copyLogLogicalLine(logicalIdx int) {
+	lines := m.filteredLogLines()
+	if logicalIdx < 0 || logicalIdx >= len(lines) {
+		m.status = "clipboard: no line"
+		return
+	}
+	text := expandLogEscapes(lines[logicalIdx])
+	if err := copyToClipboard(text); err != nil {
+		m.status = "clipboard failed: " + err.Error()
+		return
+	}
+	m.status = "copied"
+	m.err = ""
+}
+
+// logLogicalIdxAtScreen maps terminal mouse coords to a filtered logical line index.
+func (m Model) logLogicalIdxAtScreen(x, y int) (int, bool) {
+	if m.rightView != viewPodLogs || m.width == 0 {
+		return 0, false
+	}
+	leftW, _ := m.paneWidths()
+	if x < leftW {
+		return 0, false
+	}
+	bodyH, _ := layoutHeights(m.height, m.showCmds)
+	// Layout: y0 header, then bodyH rows of panes.
+	if y < 1 || y >= 1+bodyH {
+		return 0, false
+	}
+	rowInBody := y - 1
+	// Right pane: top border (0), title (1), log rows from 2.
+	contentRow := rowInBody - 2
+	if contentRow < 0 || contentRow >= m.logVisibleCount() {
+		return 0, false
+	}
+	return logLineAtVisualOffset(m.visualLogRows(), m.logScroll, contentRow)
 }
 
 func (m *Model) scrollLogsToBottom() {
@@ -1289,18 +1374,7 @@ func (m Model) View() string {
 	}
 
 	bodyH, cmdsH := layoutHeights(m.height, m.showCmds)
-
-	leftW := m.width / 3
-	if leftW < 24 {
-		leftW = 24
-	}
-	if leftW > 40 {
-		leftW = 40
-	}
-	rightW := m.width - leftW - 1
-	if rightW < 20 {
-		rightW = 20
-	}
+	leftW, rightW := m.paneWidths()
 
 	left := m.renderLeft(leftW, bodyH)
 	right := m.renderRight(rightW, bodyH)
@@ -1332,7 +1406,7 @@ func (m Model) renderHelp() string {
 		case viewPodDetail:
 			parts = append(parts, "g logs", "s shell", "backspace back", "c commands", "r refresh", "q quit")
 		case viewPodLogs:
-			parts = append(parts, "f|/ filter", "r restart follow", "backspace back", "c commands", "q quit")
+			parts = append(parts, "f|/ filter", "y copy", "ctrl+click copy", "r restart follow", "backspace back", "c commands", "q quit")
 		default:
 			parts = append(parts, "enter open", "backspace back", "c commands", "r refresh", "q quit")
 		}
@@ -1545,13 +1619,30 @@ func (m Model) renderPodLogs(b *strings.Builder, width, height int) {
 		b.WriteString(errorStyle.Render(truncate(m.err, width-4)) + "\n")
 		return
 	}
-	lines := m.filteredLogLines()
+	logical := m.filteredLogLines()
+	if len(logical) == 0 {
+		if m.logFilterActive && m.logFilter != "" {
+			b.WriteString(mutedStyle.Render("no matching lines") + "\n")
+			return
+		}
+		b.WriteString(mutedStyle.Render("no log output") + "\n")
+		return
+	}
+	if len(logical) == 1 && logical[0] == "" && (!m.logFilterActive || m.logFilter == "") {
+		b.WriteString(mutedStyle.Render("no log output") + "\n")
+		return
+	}
+	contentW := width - 4
+	if contentW < 1 {
+		contentW = 1
+	}
+	rows := buildVisualLogRows(logical, contentW)
 	// Reserve title line already written; keep padding inside the border.
 	visible := height - 4
 	if visible < 3 {
 		visible = 3
 	}
-	maxStart := len(lines) - visible
+	maxStart := len(rows) - visible
 	if maxStart < 0 {
 		maxStart = 0
 	}
@@ -1563,19 +1654,15 @@ func (m Model) renderPodLogs(b *strings.Builder, width, height int) {
 		start = maxStart
 	}
 	end := start + visible
-	if end > len(lines) {
-		end = len(lines)
+	if end > len(rows) {
+		end = len(rows)
 	}
-	if len(lines) == 0 || (len(lines) == 1 && lines[0] == "" && m.logFilter == "") {
-		b.WriteString(mutedStyle.Render("no log output") + "\n")
-		return
-	}
-	if len(lines) == 0 {
+	if len(rows) == 0 {
 		b.WriteString(mutedStyle.Render("no matching lines") + "\n")
 		return
 	}
-	for _, line := range lines[start:end] {
-		b.WriteString(itemStyle.Width(width - 4).Render(truncate(line, width-4)))
+	for _, row := range rows[start:end] {
+		b.WriteString(itemStyle.Width(contentW).Render(row.text))
 		b.WriteByte('\n')
 	}
 }
