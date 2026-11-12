@@ -41,7 +41,7 @@ func main() {
 	applog.Infof("config=%s", resolved)
 
 	model := ui.New(cfg, resolved)
-	p := tea.NewProgram(model, tea.WithAltScreen())
+	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "kube-commander: %v\n", err)
 		os.Exit(1)
