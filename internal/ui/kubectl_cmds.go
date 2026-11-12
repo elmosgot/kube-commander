@@ -46,7 +46,7 @@ func (m Model) kubectlRecipes() []string {
 		return lines
 	case viewPodLogs:
 		ctr := m.selectedContainerName()
-		line := fmt.Sprintf("%s -n %s logs %s --tail=200", base, shellQuote(m.namespace), shellQuote(m.podName))
+		line := fmt.Sprintf("%s -n %s logs %s --tail=200 --follow", base, shellQuote(m.namespace), shellQuote(m.podName))
 		if ctr != "" {
 			line += " -c " + shellQuote(ctr)
 		}

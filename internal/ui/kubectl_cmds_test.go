@@ -59,7 +59,7 @@ func TestKubectlRecipesWorkloadsPodsLogs(t *testing.T) {
 	}
 
 	m.rightView = viewPodLogs
-	if got := strings.Join(m.kubectlRecipes(), "\n"); !strings.Contains(got, "logs api-1 --tail=200") {
+	if got := strings.Join(m.kubectlRecipes(), "\n"); !strings.Contains(got, "logs api-1 --tail=200 --follow") {
 		t.Fatalf("logs: %s", got)
 	}
 }

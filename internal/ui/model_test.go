@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -280,26 +281,54 @@ func TestPodLogsScroll(t *testing.T) {
 	m.width = 100
 	m.height = 20
 	m.focus = paneRight
-	m.namespace = "ns"
-	m.deployment = "dep"
-	m.podName = "pod"
-	m.podDetail = &kube.PodDetail{
-		Name:       "pod",
-		Containers: []kube.ContainerInfo{{Name: "app"}},
+	m.rightView = viewPodLogs
+	// height 20 → bodyH 17 → visible 13; 20 lines → maxScroll = 7
+	var b strings.Builder
+	for i := 0; i < 20; i++ {
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(fmt.Sprintf("line%d", i))
 	}
-	m.rightView = viewPodDetail
+	m.logText = b.String()
+	m.scrollLogsToBottom()
+	if m.logScroll != 7 {
+		t.Fatalf("bottom scroll = %d, want 7", m.logScroll)
+	}
 
-	updated, _ := m.Update(podLogsMsg{
-		poolIdx: 0, envIdx: 0, namespace: "ns", pod: "pod", container: "app",
-		text: "line0\nline1\nline2\nline3\nline4",
-	})
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyUp})
 	m = updated.(Model)
-	if m.rightView != viewPodLogs {
-		t.Fatalf("rightView = %v", m.rightView)
-	}
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
-	m = updated.(Model)
-	if m.logScroll != 1 {
+	if m.logScroll != 6 {
 		t.Fatalf("logScroll = %d", m.logScroll)
+	}
+	if m.logStickBottom {
+		t.Fatal("expected stick-to-bottom cleared after scrolling up")
+	}
+}
+
+func TestScrollLogsToBottomShowsViewport(t *testing.T) {
+	m := New(testConfig(), "test.yaml")
+	m.width = 100
+	m.height = 20
+	m.rightView = viewPodLogs
+	m.logStickBottom = true
+	lines := make([]string, 30)
+	for i := range lines {
+		lines[i] = fmt.Sprintf("L%d", i)
+	}
+	m.logText = strings.Join(lines, "\n")
+	m.scrollLogsToBottom()
+
+	var b strings.Builder
+	m.renderPodLogs(&b, 80, 17)
+	out := b.String()
+	if !strings.Contains(out, "L29") {
+		t.Fatalf("missing last line:\n%s", out)
+	}
+	if !strings.Contains(out, "L17") {
+		t.Fatalf("expected full viewport near bottom, got:\n%s", out)
+	}
+	if strings.Contains(out, "L0\n") && !strings.Contains(out, "L17") {
+		t.Fatal("viewport should not be only the last line")
 	}
 }
