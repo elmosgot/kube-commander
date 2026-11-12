@@ -45,9 +45,14 @@ func TestModelRendersPools(t *testing.T) {
 	m.height = 40
 
 	view := m.View()
-	for _, want := range []string{"kube-commander", "Pools", "pool-x", "testing", "pool-y", "namespace=app", "kubeconfig=", "a az login", "g logs", "s shell", "c commands"} {
+	for _, want := range []string{"kube-commander", "Pools", "pool-x", "testing", "pool-y", "namespace=app", "kubeconfig=", "a az login", "l ensure", "c commands"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("view missing %q:\n%s", want, view)
+		}
+	}
+	for _, notWant := range []string{"g logs", "f|/ filter", "s shell"} {
+		if strings.Contains(view, notWant) {
+			t.Fatalf("left-pane view unexpectedly has %q:\n%s", notWant, view)
 		}
 	}
 	if !strings.Contains(view, config.ResolveKubeconfig(testConfig().Pools[0].Environments[0])) {
