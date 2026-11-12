@@ -8,9 +8,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/elwin/kube-commander/internal/applog"
-	"github.com/elwin/kube-commander/internal/config"
-	"github.com/elwin/kube-commander/internal/ui"
+	"github.com/elmosgot/kube-commander/internal/applog"
+	"github.com/elmosgot/kube-commander/internal/config"
+	"github.com/elmosgot/kube-commander/internal/ui"
 )
 
 // version is set at link time via -ldflags "-X main.version=...".

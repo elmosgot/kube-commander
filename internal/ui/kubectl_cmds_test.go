@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/elmosgot/kube-commander/internal/kube"
 )
 
 func TestKubectlRecipesNamespaces(t *testing.T) {
@@ -46,8 +48,14 @@ func TestKubectlRecipesWorkloadsPodsLogs(t *testing.T) {
 	}
 
 	m.rightView = viewPodDetail
-	if got := strings.Join(m.kubectlRecipes(), "\n"); !strings.Contains(got, "get pod api-1 -o wide") {
-		t.Fatalf("detail: %s", got)
+	m.podDetail = &kube.PodDetail{
+		Name: "api-1",
+		Containers: []kube.ContainerInfo{{Name: "app"}},
+	}
+	m.containerIdx = 0
+	detail := strings.Join(m.kubectlRecipes(), "\n")
+	if !strings.Contains(detail, "get pod api-1 -o wide") || !strings.Contains(detail, "exec -it api-1 -c app") {
+		t.Fatalf("detail: %s", detail)
 	}
 
 	m.rightView = viewPodLogs
@@ -116,5 +124,61 @@ func TestCommandsPanelViewFitsHeight(t *testing.T) {
 	// lipgloss may leave a trailing empty line; allow a small margin but not full overflow
 	if len(lines) > m.height+2 {
 		t.Fatalf("view has %d lines for height %d:\n%s", len(lines), m.height, view)
+	}
+}
+
+func TestExecIntoContainerReturnsExecCmd(t *testing.T) {
+	m := New(testConfig(), "test.yaml")
+	m.width = 100
+	m.height = 30
+	m.leftCursor = 1
+	m.focus = paneRight
+	m.rightView = viewPodDetail
+	m.namespace = "app"
+	m.podName = "api-1"
+	m.podDetail = &kube.PodDetail{
+		Name:       "api-1",
+		Containers: []kube.ContainerInfo{{Name: "app"}},
+	}
+	m.containerIdx = 0
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	m = updated.(Model)
+	if cmd == nil {
+		t.Fatal("expected exec process command")
+	}
+	if !strings.Contains(m.status, "exec") {
+		t.Fatalf("status = %q", m.status)
+	}
+	if m.err != "" {
+		t.Fatalf("unexpected err %q", m.err)
+	}
+}
+
+func TestExecIntoContainerRequiresContainer(t *testing.T) {
+	m := New(testConfig(), "test.yaml")
+	m.leftCursor = 1
+	m.focus = paneRight
+	m.rightView = viewPodDetail
+	m.podDetail = &kube.PodDetail{Name: "api-1", Containers: nil}
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	m = updated.(Model)
+	if cmd != nil {
+		t.Fatal("expected no exec when no containers")
+	}
+	if m.err != "no container selected" {
+		t.Fatalf("err = %q", m.err)
+	}
+}
+
+func TestKubectlExecArgs(t *testing.T) {
+	env := testConfig().Pools[0].Environments[0]
+	args := kubectlExecArgs(env, "app", "api-1", "app")
+	joined := strings.Join(args, " ")
+	for _, want := range []string{"exec", "-it", "--context", "pool-x-test", "-n", "app", "api-1", "-c", "app", "bash"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("missing %q in %v", want, args)
+		}
 	}
 }

@@ -11,8 +11,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/elwin/kube-commander/internal/applog"
-	"github.com/elwin/kube-commander/internal/config"
+	"github.com/elmosgot/kube-commander/internal/applog"
+	"github.com/elmosgot/kube-commander/internal/config"
 )
 
 // Minimum Azure CLI version that supports `az login --subscription` / `-s`.
