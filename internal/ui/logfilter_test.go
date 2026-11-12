@@ -133,4 +133,97 @@ func TestLogFilterHelpOnBottom(t *testing.T) {
 	if !strings.Contains(help, "Filter: foo█") {
 		t.Fatalf("help = %q", help)
 	}
+	if !strings.Contains(help, "! exclude") {
+		t.Fatalf("help missing exclude hint: %q", help)
+	}
+	if !strings.Contains(help, "| or") {
+		t.Fatalf("help missing OR hint: %q", help)
+	}
+}
+
+func TestLogFilterExcludePrefix(t *testing.T) {
+	m := New(testConfig(), "test.yaml")
+	m.logFilterActive = true
+	m.logText = "GET /ready\nPOST /orders\nGET /readyz\nERROR boom"
+
+	m.logFilter = "err"
+	lines := m.filteredLogLines()
+	if len(lines) != 1 || !strings.Contains(lines[0], "ERROR") {
+		t.Fatalf("positive filter = %v", lines)
+	}
+
+	m.logFilter = "!ready"
+	lines = m.filteredLogLines()
+	if len(lines) != 2 {
+		t.Fatalf("exclude ready: got %v", lines)
+	}
+	for _, line := range lines {
+		if strings.Contains(strings.ToLower(line), "ready") {
+			t.Fatalf("exclude leaked ready line: %q", line)
+		}
+	}
+
+	m.logFilter = "!"
+	lines = m.filteredLogLines()
+	if len(lines) != 4 {
+		t.Fatalf("bare ! should show all, got %v", lines)
+	}
+}
+
+func TestLogFilterIgnoresControlRunes(t *testing.T) {
+	m := New(testConfig(), "test.yaml")
+	m.focus = paneRight
+	m.rightView = viewPodLogs
+	m.logFilterActive = true
+	m.logFilter = "err"
+	m.logText = "error\nready\n"
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{0x1b}}) // ESC from Alt
+	m = updated.(Model)
+	if m.logFilter != "err" {
+		t.Fatalf("control rune altered filter: %q", m.logFilter)
+	}
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{0x1b, '|'}})
+	m = updated.(Model)
+	if m.logFilter != "err|" {
+		t.Fatalf("expected printable | only, got %q", m.logFilter)
+	}
+}
+
+func TestLogFilterOR(t *testing.T) {
+	m := New(testConfig(), "test.yaml")
+	m.logFilterActive = true
+	m.logText = "GET /ready\nPOST /orders\nWARN slow\nERROR boom"
+
+	m.logFilter = "error|warn"
+	lines := m.filteredLogLines()
+	if len(lines) != 2 {
+		t.Fatalf("OR filter = %v", lines)
+	}
+
+	m.logFilter = "error|"
+	lines = m.filteredLogLines()
+	if len(lines) != 1 || !strings.Contains(lines[0], "ERROR") {
+		t.Fatalf("trailing pipe = %v", lines)
+	}
+
+	m.logFilter = "|"
+	lines = m.filteredLogLines()
+	if len(lines) != 4 {
+		t.Fatalf("bare | should show all, got %v", lines)
+	}
+
+	m.logFilter = "!ready|warn"
+	lines = m.filteredLogLines()
+	// exclude if line matches ready OR warn → keep POST and ERROR
+	if len(lines) != 2 {
+		t.Fatalf("exclude OR = %v", lines)
+	}
+	for _, line := range lines {
+		lower := strings.ToLower(line)
+		if strings.Contains(lower, "ready") || strings.Contains(lower, "warn") {
+			t.Fatalf("exclude OR leaked: %q", line)
+		}
+	}
 }

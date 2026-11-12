@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
@@ -989,8 +990,18 @@ func (m Model) updateLogFilter(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.moveRight(10)
 	}
 	// Letters (including j/k) append to the query — only arrows scroll while filtering.
+	// Skip control/meta runes (Alt often injects ESC); keep printable chars so AltGr `|` still works.
 	if msg.Type == tea.KeyRunes && len(msg.Runes) > 0 {
-		m.logFilter += string(msg.Runes)
+		var b strings.Builder
+		for _, r := range msg.Runes {
+			if unicode.IsPrint(r) {
+				b.WriteRune(r)
+			}
+		}
+		if b.Len() == 0 {
+			return m, nil
+		}
+		m.logFilter += b.String()
 		m.logScroll = 0
 		return m, nil
 	}
@@ -1008,9 +1019,32 @@ func (m Model) filteredLogLines() []string {
 		return lines
 	}
 	q := strings.ToLower(m.logFilter)
+	exclude := false
+	if strings.HasPrefix(q, "!") {
+		exclude = true
+		q = strings.TrimPrefix(q, "!")
+	}
+	terms := make([]string, 0)
+	for _, part := range strings.Split(q, "|") {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			terms = append(terms, part)
+		}
+	}
+	if len(terms) == 0 {
+		return lines
+	}
 	out := make([]string, 0, len(lines))
 	for _, line := range lines {
-		if strings.Contains(strings.ToLower(line), q) {
+		lower := strings.ToLower(line)
+		match := false
+		for _, term := range terms {
+			if strings.Contains(lower, term) {
+				match = true
+				break
+			}
+		}
+		if (exclude && !match) || (!exclude && match) {
 			out = append(out, line)
 		}
 	}
@@ -1286,7 +1320,7 @@ func (m Model) View() string {
 
 func (m Model) renderHelp() string {
 	if m.rightView == viewPodLogs && m.logFilterActive {
-		line := "Filter: " + m.logFilter + "█  ·  esc clear · ↑↓ scroll"
+		line := "Filter: " + m.logFilter + "█  ·  ! exclude · | or · esc clear · ↑↓ scroll"
 		return helpStyle.Render(truncate(line, m.width))
 	}
 
