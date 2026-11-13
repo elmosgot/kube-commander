@@ -175,7 +175,7 @@ The bottom help line is **context-sensitive** (focus pane + current right view).
 | `s` | Interactive shell into the selected container (`bash` if present, else `sh`) via `kubectl exec` |
 | `a` | Left pane: interactive `az login` (picker suppressed via env; `-s` when Azure CLI ≥ 2.87), then `az account set` + ensure credentials |
 | `l` | Left pane: ensure Azure credentials into `$HOME/.kube/config` (`az` + `kubelogin`) |
-| `c` | Toggle bottom commands panel (equivalent `kubectl` for the current view + recent shell commands) |
+| `c` | Toggle bottom commands panel: live log of started commands (pulse while running, duration when done, `∞` for log follow). Ctrl+click copies the command line. Errors show in red under the entry. |
 | `Backspace` / `←` / `h` / `Esc` | Go up one level (logs → detail → pods → deployments → left pools); leaving logs cancels the follow stream |
 | `r` | Refresh the current right-pane view (lists/detail); on logs, restart the follow stream |
 | `q` | Quit |

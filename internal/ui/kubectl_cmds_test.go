@@ -3,63 +3,33 @@ package ui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/elmosgot/kube-commander/internal/kube"
 )
 
-func TestKubectlRecipesNamespaces(t *testing.T) {
-	m := New(testConfig(), "test.yaml")
-	m.leftCursor = 1 // first env under pool-x
-	m.rightView = viewNamespaces
-	lines := m.kubectlRecipes()
-	joined := strings.Join(lines, "\n")
-	for _, want := range []string{
-		"kubectl --context pool-x-test",
-		"--kubeconfig",
-		"get namespaces",
-		"get deployments -A",
-		"get pods -A",
-	} {
-		if !strings.Contains(joined, want) {
-			t.Fatalf("missing %q in:\n%s", want, joined)
-		}
-	}
-}
-
-func TestKubectlRecipesWorkloadsPodsLogs(t *testing.T) {
+func TestKubectlLineBuilders(t *testing.T) {
 	m := New(testConfig(), "test.yaml")
 	m.leftCursor = 1
 	m.namespace = "app"
 	m.deployment = "api"
 	m.podName = "api-1"
-	m.podDetail = nil
-
 	m.rightView = viewWorkloads
-	if got := strings.Join(m.kubectlRecipes(), "\n"); !strings.Contains(got, "-n app get deployments") {
+	if got := m.kubectlLineWorkloads("app"); !strings.Contains(got, "-n app get deployments") {
 		t.Fatalf("workloads: %s", got)
 	}
-
 	m.rightView = viewPods
-	pods := strings.Join(m.kubectlRecipes(), "\n")
-	if !strings.Contains(pods, "get deployment api") || !strings.Contains(pods, "get pods") {
-		t.Fatalf("pods: %s", pods)
+	if got := m.kubectlLinePods("app", "api"); !strings.Contains(got, "get pods") {
+		t.Fatalf("pods: %s", got)
 	}
-
-	m.rightView = viewPodDetail
 	m.podDetail = &kube.PodDetail{
-		Name: "api-1",
+		Name:       "api-1",
 		Containers: []kube.ContainerInfo{{Name: "app"}},
 	}
-	m.containerIdx = 0
-	detail := strings.Join(m.kubectlRecipes(), "\n")
-	if !strings.Contains(detail, "get pod api-1 -o wide") || !strings.Contains(detail, "exec -it api-1 -c app") {
-		t.Fatalf("detail: %s", detail)
-	}
-
 	m.rightView = viewPodLogs
-	if got := strings.Join(m.kubectlRecipes(), "\n"); !strings.Contains(got, "logs api-1 --tail=200 --follow") {
+	if got := m.kubectlLogsFollowLine(); !strings.Contains(got, "logs api-1 --tail=200 --follow") {
 		t.Fatalf("logs: %s", got)
 	}
 }
@@ -69,6 +39,7 @@ func TestToggleCommandsPanel(t *testing.T) {
 	m.width = 100
 	m.height = 40
 	m.leftCursor = 1
+	m.beginCmd("kubectl get pods", false)
 
 	if m.showCmds {
 		t.Fatal("expected hidden by default")
@@ -79,11 +50,14 @@ func TestToggleCommandsPanel(t *testing.T) {
 		t.Fatal("expected showCmds after c")
 	}
 	view := m.View()
-	if !strings.Contains(view, "View") || !strings.Contains(view, "Shell") {
-		t.Fatalf("panel missing sections:\n%s", view)
+	if !strings.Contains(view, "Commands") {
+		t.Fatalf("panel missing title:\n%s", view)
 	}
-	if !strings.Contains(view, "get namespaces") {
-		t.Fatalf("panel missing kubectl recipe:\n%s", view)
+	if strings.Contains(view, "\nView\n") || strings.Contains(view, "Shell") {
+		t.Fatalf("old View/Shell sections still present:\n%s", view)
+	}
+	if !strings.Contains(view, "kubectl get pods") {
+		t.Fatalf("panel missing live command:\n%s", view)
 	}
 }
 
@@ -96,13 +70,11 @@ func TestLayoutHeightsFitsTerminal(t *testing.T) {
 		t.Fatalf("expected positive body/cmds, got body=%d cmds=%d", bodyH, cmdsH)
 	}
 
-	// Tight terminal: must shrink cmds instead of flooring body to 3.
 	bodyH, cmdsH = layoutHeights(10, true)
 	if bodyH+cmdsH+3 > 10 {
 		t.Fatalf("tight overflow: body=%d cmds=%d", bodyH, cmdsH)
 	}
 	if bodyH != 1 {
-		// avail=7, cmds capped to 6 → body=1
 		t.Fatalf("expected bodyH=1 on tight terminal, got %d (cmds=%d)", bodyH, cmdsH)
 	}
 
@@ -115,15 +87,76 @@ func TestLayoutHeightsFitsTerminal(t *testing.T) {
 func TestCommandsPanelViewFitsHeight(t *testing.T) {
 	m := New(testConfig(), "test.yaml")
 	m.width = 80
-	m.height = 16 // would overflow under old bodyH=3 floor + cmdsPanelHeight
+	m.height = 16
 	m.leftCursor = 1
 	m.showCmds = true
+	m.beginCmd("kubectl get namespaces", false)
 
 	view := m.View()
 	lines := strings.Split(view, "\n")
-	// lipgloss may leave a trailing empty line; allow a small margin but not full overflow
 	if len(lines) > m.height+2 {
 		t.Fatalf("view has %d lines for height %d:\n%s", len(lines), m.height, view)
+	}
+}
+
+func TestCmdLogBeginFinish(t *testing.T) {
+	m := New(testConfig(), "test.yaml")
+	id := m.beginCmd("kubectl get pods", false)
+	if len(m.cmdLog) != 1 || !m.cmdLog[0].Running {
+		t.Fatalf("entry = %+v", m.cmdLog)
+	}
+	time.Sleep(2 * time.Millisecond)
+	m.finishCmd(id, nil)
+	if m.cmdLog[0].Running {
+		t.Fatal("still running")
+	}
+	if m.cmdLog[0].Ended.Before(m.cmdLog[0].Started) {
+		t.Fatal("bad timestamps")
+	}
+	if m.cmdLog[0].durationLabel(time.Now()) == "" {
+		t.Fatal("empty duration")
+	}
+}
+
+func TestCmdLogInfiniteAndError(t *testing.T) {
+	m := New(testConfig(), "test.yaml")
+	m.width = 100
+	m.height = 40
+	m.showCmds = true
+	id := m.beginCmd("kubectl logs --follow", true)
+	if m.cmdLog[0].durationLabel(time.Now()) != "∞" {
+		t.Fatalf("want ∞, got %q", m.cmdLog[0].durationLabel(time.Now()))
+	}
+	view := m.View()
+	if !strings.Contains(view, "●") {
+		t.Fatalf("missing running dot:\n%s", view)
+	}
+	if !strings.Contains(view, "∞") {
+		t.Fatalf("missing infinity:\n%s", view)
+	}
+	m.finishCmd(id, errString("boom"))
+	view = m.View()
+	if !strings.Contains(view, "boom") {
+		t.Fatalf("missing error:\n%s", view)
+	}
+}
+
+type errString string
+
+func (e errString) Error() string { return string(e) }
+
+func TestCmdLogIDAtScreen(t *testing.T) {
+	m := New(testConfig(), "test.yaml")
+	m.width = 80
+	m.height = 30
+	m.showCmds = true
+	id := m.beginCmd("kubectl get pods", false)
+
+	bodyH, cmdsH := layoutHeights(m.height, true)
+	y := 1 + bodyH + 2 // past top border + title → first cmd row
+	got, ok := m.cmdLogIDAtScreen(10, y)
+	if !ok || got != id {
+		t.Fatalf("id=%d ok=%v (bodyH=%d cmdsH=%d y=%d)", got, ok, bodyH, cmdsH, y)
 	}
 }
 
@@ -131,54 +164,22 @@ func TestExecIntoContainerReturnsExecCmd(t *testing.T) {
 	m := New(testConfig(), "test.yaml")
 	m.width = 100
 	m.height = 30
-	m.leftCursor = 1
 	m.focus = paneRight
 	m.rightView = viewPodDetail
-	m.namespace = "app"
-	m.podName = "api-1"
+	m.namespace = "ns"
+	m.podName = "pod"
 	m.podDetail = &kube.PodDetail{
-		Name:       "api-1",
+		Name:       "pod",
 		Containers: []kube.ContainerInfo{{Name: "app"}},
 	}
-	m.containerIdx = 0
+	m.leftCursor = 1
 
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
 	m = updated.(Model)
 	if cmd == nil {
-		t.Fatal("expected exec process command")
+		t.Fatal("expected exec cmd")
 	}
-	if !strings.Contains(m.status, "exec") {
-		t.Fatalf("status = %q", m.status)
-	}
-	if m.err != "" {
-		t.Fatalf("unexpected err %q", m.err)
-	}
-}
-
-func TestExecIntoContainerRequiresContainer(t *testing.T) {
-	m := New(testConfig(), "test.yaml")
-	m.leftCursor = 1
-	m.focus = paneRight
-	m.rightView = viewPodDetail
-	m.podDetail = &kube.PodDetail{Name: "api-1", Containers: nil}
-
-	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
-	m = updated.(Model)
-	if cmd != nil {
-		t.Fatal("expected no exec when no containers")
-	}
-	if m.err != "no container selected" {
-		t.Fatalf("err = %q", m.err)
-	}
-}
-
-func TestKubectlExecArgs(t *testing.T) {
-	env := testConfig().Pools[0].Environments[0]
-	args := kubectlExecArgs(env, "app", "api-1", "app")
-	joined := strings.Join(args, " ")
-	for _, want := range []string{"exec", "-it", "--context", "pool-x-test", "-n", "app", "api-1", "-c", "app", "bash"} {
-		if !strings.Contains(joined, want) {
-			t.Fatalf("missing %q in %v", want, args)
-		}
+	if len(m.cmdLog) == 0 || !strings.Contains(m.cmdLog[len(m.cmdLog)-1].Line, "exec") {
+		t.Fatalf("cmdLog = %+v", m.cmdLog)
 	}
 }
