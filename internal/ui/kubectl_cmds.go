@@ -7,35 +7,6 @@ import (
 	"github.com/elmosgot/kube-commander/internal/config"
 )
 
-// kubectlLineForView returns the primary kubectl-equivalent line for the current right view.
-func (m Model) kubectlLineForView() string {
-	env, _, _, ok := m.selectedEnv()
-	if !ok {
-		return "# select an environment"
-	}
-	base := kubectlBase(env)
-	switch m.rightView {
-	case viewWorkloads:
-		ns := m.namespace
-		if ns == "" {
-			ns = env.Namespace
-		}
-		if ns == "" {
-			return base + " get deployments -A"
-		}
-		return fmt.Sprintf("%s -n %s get deployments", base, shellQuote(ns))
-	case viewPods:
-		return fmt.Sprintf("%s -n %s get pods -l '<selector from deploy/%s>'",
-			base, shellQuote(m.namespace), m.deployment)
-	case viewPodDetail:
-		return fmt.Sprintf("%s -n %s get pod %s -o wide", base, shellQuote(m.namespace), shellQuote(m.podName))
-	case viewPodLogs:
-		return m.kubectlLogsFollowLine()
-	default:
-		return base + " get namespaces"
-	}
-}
-
 func (m Model) kubectlLogsFollowLine() string {
 	env, _, _, ok := m.selectedEnv()
 	if !ok {

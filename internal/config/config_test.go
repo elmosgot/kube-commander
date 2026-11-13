@@ -6,6 +6,8 @@ import (
 	"testing"
 )
 
+const envDevelop = "develop"
+
 func TestLoadExample(t *testing.T) {
 	path := filepath.Join("..", "..", "configs", "example.yaml")
 	cfg, resolved, err := Load(path, "")
@@ -49,8 +51,8 @@ func TestValidateRejectsEmpty(t *testing.T) {
 func TestValidateRejectsDuplicatePool(t *testing.T) {
 	cfg := &Config{
 		Pools: []Pool{
-			{Name: "a", Environments: []Environment{{Name: "develop", Context: "a-dev"}}},
-			{Name: "a", Environments: []Environment{{Name: "develop", Context: "b-dev"}}},
+			{Name: "a", Environments: []Environment{{Name: envDevelop, Context: "a-dev"}}},
+			{Name: "a", Environments: []Environment{{Name: envDevelop, Context: "b-dev"}}},
 		},
 	}
 	if err := cfg.Validate(); err == nil {
@@ -64,7 +66,7 @@ func TestValidateRejectsIncompleteAzure(t *testing.T) {
 			{
 				Name: "a",
 				Environments: []Environment{{
-					Name:    "develop",
+					Name:    envDevelop,
 					Context: "a-dev",
 					Azure:   &AzureConfig{Subscription: "sub-only"},
 				}},
@@ -80,7 +82,7 @@ func TestLoadFallsBackToExample(t *testing.T) {
 	dir := t.TempDir()
 	example := filepath.Join(dir, "example.yaml")
 	content := []byte("pools:\n  - name: demo\n    environments:\n      - name: develop\n        context: demo-dev\n")
-	if err := os.WriteFile(example, content, 0o644); err != nil {
+	if err := os.WriteFile(example, content, 0o600); err != nil {
 		t.Fatal(err)
 	}
 

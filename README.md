@@ -20,6 +20,12 @@ Read-only two-pane navigator with optional Azure AKS credential refresh.
 - `kubectl` / a valid kubeconfig with the contexts you reference
 - Linux `az` CLI and `kubelogin` (only if you use `l` / azure blocks)
 - Run `az login` yourself first (in WSL/Cursor prefer `az login --use-device-code`)
+- [golangci-lint](https://golangci-lint.run/) v2 (for local lint/format)
+
+```bash
+golangci-lint run ./...
+golangci-lint fmt ./...
+```
 
 ## Logging
 

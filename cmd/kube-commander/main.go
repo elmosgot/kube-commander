@@ -17,13 +17,22 @@ import (
 var version = "dev"
 
 func main() {
-	configPath := flag.String("config", "", "path to kube-commander config (default: ~/.config/kube-commander/config.yaml)")
+	os.Exit(run())
+}
+
+// run wires up logging and the TUI, returning the process exit code. Using a
+// helper (rather than os.Exit in main) ensures deferred cleanup still runs.
+func run() int {
+	configPath := flag.String(
+		"config", "",
+		"path to kube-commander config (default: ~/.config/kube-commander/config.yaml)",
+	)
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
 
 	if *showVersion {
 		fmt.Println(version)
-		return
+		return 0
 	}
 
 	applog.SetVersion(version)
@@ -36,7 +45,7 @@ func main() {
 	cfg, resolved, err := config.Load(*configPath, examplePath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "kube-commander: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 	applog.Infof("config=%s", resolved)
 
@@ -44,8 +53,9 @@ func main() {
 	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "kube-commander: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }
 
 func findExampleConfig() string {

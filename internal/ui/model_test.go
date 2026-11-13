@@ -18,22 +18,22 @@ func testConfig() *config.Config {
 				Name: "pool-x",
 				Environments: []config.Environment{
 					{
-						Name:      "testing",
-						Context:   "pool-x-test",
-						Namespace: "app",
+						Name:      tTesting,
+						Context:   tPoolXTest,
+						Namespace: tApp,
 						Azure: &config.AzureConfig{
 							Subscription:  "00000000-0000-0000-0000-000000000002",
 							ResourceGroup: "rg-pool-x-test",
 							Cluster:       "aks-pool-x-test",
 						},
 					},
-					{Name: "production", Context: "pool-x-prod", Namespace: "app"},
+					{Name: "production", Context: "pool-x-prod", Namespace: tApp},
 				},
 			},
 			{
 				Name: "pool-y",
 				Environments: []config.Environment{
-					{Name: "develop", Context: "pool-y-dev", Namespace: "app"},
+					{Name: "develop", Context: "pool-y-dev", Namespace: tApp},
 				},
 			},
 		},
@@ -46,12 +46,15 @@ func TestModelRendersPools(t *testing.T) {
 	m.height = 40
 
 	view := m.View()
-	for _, want := range []string{"kube-commander", "Pools", "pool-x", "testing", "pool-y", "namespace=app", "kubeconfig=", "a az login", "l ensure", "c commands"} {
+	for _, want := range []string{
+		"kube-commander", "Pools", "pool-x", tTesting, "pool-y",
+		"namespace=app", "kubeconfig=", helpAzLogin, "l ensure", "c commands",
+	} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("view missing %q:\n%s", want, view)
 		}
 	}
-	for _, notWant := range []string{"g logs", "f|/ filter", "s shell"} {
+	for _, notWant := range []string{helpLogs, helpFilter, "s shell"} {
 		if strings.Contains(view, notWant) {
 			t.Fatalf("left-pane view unexpectedly has %q:\n%s", notWant, view)
 		}
@@ -67,7 +70,7 @@ func TestLeftNavigationSelectsEnvironment(t *testing.T) {
 	m.height = 30
 
 	env, _, _, ok := m.selectedEnv()
-	if !ok || env.Name != "testing" || env.Context != "pool-x-test" {
+	if !ok || env.Name != tTesting || env.Context != tPoolXTest {
 		t.Fatalf("initial env = %+v ok=%v", env, ok)
 	}
 
@@ -156,7 +159,7 @@ func TestAzLoginWithSubscriptionReturnsExecCmd(t *testing.T) {
 
 func TestUnavailableHintMentionsAzLogin(t *testing.T) {
 	env := config.Environment{
-		Context: "pool-x-test",
+		Context: tPoolXTest,
 		Azure: &config.AzureConfig{
 			Subscription:  "00000000-0000-0000-0000-000000000002",
 			ResourceGroup: "rg",
@@ -199,22 +202,22 @@ func TestPodsMsgOpensPodsView(t *testing.T) {
 	m.width = 120
 	m.height = 40
 	m.focus = paneRight
-	m.namespace = "app"
+	m.namespace = tApp
 
 	updated, _ := m.Update(podsMsg{
 		poolIdx:    0,
 		envIdx:     0,
-		namespace:  "app",
-		deployment: "my-api",
+		namespace:  tApp,
+		deployment: tMyAPI,
 		items: []kube.PodInfo{
-			{Name: "my-api-abc", Ready: "1/1", Restarts: 0, Status: "Running", Age: "3d"},
+			{Name: "my-api-abc", Ready: tReady11, Restarts: 0, Status: "Running", Age: "3d"},
 		},
 	})
 	m = updated.(Model)
 	if m.rightView != viewPods {
 		t.Fatalf("rightView = %v", m.rightView)
 	}
-	if m.deployment != "my-api" || len(m.pods) != 1 {
+	if m.deployment != tMyAPI || len(m.pods) != 1 {
 		t.Fatalf("deployment=%q pods=%d", m.deployment, len(m.pods))
 	}
 	view := m.View()
@@ -232,7 +235,7 @@ func TestPodDetailAndBackspace(t *testing.T) {
 	m.height = 40
 	m.focus = paneRight
 	m.namespace = "ns"
-	m.deployment = "my-api"
+	m.deployment = tMyAPI
 	m.rightView = viewPods
 
 	updated, _ := m.Update(podDetailMsg{
@@ -243,13 +246,13 @@ func TestPodDetailAndBackspace(t *testing.T) {
 		detail: &kube.PodDetail{
 			Name:  "my-api-abc",
 			Phase: "Running",
-			Ready: "1/1",
+			Ready: tReady11,
 			Node:  "node-1",
 			PodIP: "10.0.0.1",
 			Age:   "2d",
 			Containers: []kube.ContainerInfo{
 				{
-					Name: "app", Image: "img:1", Ready: true, State: "Running",
+					Name: tApp, Image: "img:1", Ready: true, State: "Running",
 					CPURequest: "100m", CPULimit: "500m", MemRequest: "128Mi", MemLimit: "512Mi",
 				},
 			},
@@ -260,7 +263,10 @@ func TestPodDetailAndBackspace(t *testing.T) {
 		t.Fatalf("rightView = %v", m.rightView)
 	}
 	view := m.View()
-	for _, want := range []string{"Pod · my-api-abc", "phase=Running", "app", "cpu 100m/500m", "mem 128Mi/512Mi", "container=app"} {
+	for _, want := range []string{
+		"Pod · my-api-abc", "phase=Running", tApp,
+		"cpu 100m/500m", "mem 128Mi/512Mi", "container=app",
+	} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("missing %q in:\n%s", want, view)
 		}
@@ -288,7 +294,7 @@ func TestPodLogsScroll(t *testing.T) {
 		if i > 0 {
 			b.WriteByte('\n')
 		}
-		b.WriteString(fmt.Sprintf("line%d", i))
+		fmt.Fprintf(&b, "line%d", i)
 	}
 	m.logText = b.String()
 	m.scrollLogsToBottom()

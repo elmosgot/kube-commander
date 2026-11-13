@@ -1,0 +1,57 @@
+version: "2"
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - errorlint
+    - dupl
+    - funlen
+    - gocognit
+    - goconst
+    - gocritic
+    - gocyclo
+    - gosec
+    - govet
+    - ineffassign
+    - lll
+    - misspell
+    - nestif
+    - revive
+    - staticcheck
+    - unused
+  settings:
+    funlen:
+      lines: 100
+      statements: 50
+    gocyclo:
+      min-complexity: 25
+    gocognit:
+      min-complexity: 30
+    goconst:
+      min-len: 3
+      min-occurrences: 3
+    nestif:
+      min-complexity: 4
+    dupl:
+      threshold: 150
+    lll:
+      line-length: 120
+    revive:
+      rules:
+        - name: file-length-limit
+          severity: warning
+          disabled: false
+          arguments:
+            - max: 500
+              skipComments: true
+              skipBlankLines: true
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

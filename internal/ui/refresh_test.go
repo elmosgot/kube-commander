@@ -15,8 +15,8 @@ func TestAutoRefreshSchedulesQuietFetch(t *testing.T) {
 	m.height = 30
 	m.focus = paneRight
 	m.rightView = viewWorkloads
-	m.namespace = "app"
-	m.workloads = []kube.WorkloadInfo{{Name: "api"}}
+	m.namespace = tApp
+	m.workloads = []kube.WorkloadInfo{{Name: tAPI}}
 	m.rightCursor = 0
 	m.available[envKey(m.cfg.Pools[0].Environments[0])] = true
 	m.loading = false
@@ -52,14 +52,14 @@ func TestSilentWorkloadsPreservesCursorAndFilterIrrelevant(t *testing.T) {
 	m := New(testConfig(), "test.yaml")
 	m.focus = paneRight
 	m.rightView = viewWorkloads
-	m.namespace = "app"
+	m.namespace = tApp
 	m.workloads = []kube.WorkloadInfo{{Name: "a"}, {Name: "b"}, {Name: "c"}}
 	m.rightCursor = 2
 
 	updated, _ := m.Update(workloadsMsg{
 		poolIdx:   0,
 		envIdx:    0,
-		namespace: "app",
+		namespace: tApp,
 		items:     []kube.WorkloadInfo{{Name: "a"}, {Name: "b"}, {Name: "c"}, {Name: "d"}},
 		silent:    true,
 	})
@@ -81,14 +81,14 @@ func TestLogChunkAppendsWithoutClearingFilter(t *testing.T) {
 	m.logFollowID = 3
 	m.logText = "alpha\n"
 	m.logFilterActive = true
-	m.logFilter = "err"
+	m.logFilter = tErr
 	m.logStickBottom = true
 	m.logScroll = 0
 
 	ch := make(chan tea.Msg)
 	updated, cmd := m.Update(logChunkMsg{id: 3, text: "error line", ch: ch})
 	m = updated.(Model)
-	if !m.logFilterActive || m.logFilter != "err" {
+	if !m.logFilterActive || m.logFilter != tErr {
 		t.Fatalf("filter cleared: active=%v filter=%q", m.logFilterActive, m.logFilter)
 	}
 	if m.logText != "alpha\nerror line" {
