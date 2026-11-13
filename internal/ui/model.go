@@ -89,18 +89,21 @@ type autoRefreshMsg struct{}
 type ensureMsg struct {
 	poolIdx int
 	envIdx  int
+	cmdID   int
 	err     error
 }
 
 type loginMsg struct {
 	poolIdx int
 	envIdx  int
+	cmdID   int
 	err     error
 }
 
 type execMsg struct {
 	poolIdx int
 	envIdx  int
+	cmdID   int
 	err     error
 }
 
@@ -132,13 +135,17 @@ type Model struct {
 	logStickBottom  bool
 	logFollowID     int
 	logFollowCancel context.CancelFunc
+	logFollowCmdID  int // cmd log entry for active follow stream
 
 	loading         bool
 	autoRefreshBusy bool
 	err             string
 	status          string
 
-	showCmds bool
+	showCmds     bool
+	cmdLog       []cmdEntry
+	cmdLogSeq    int
+	cmdAnimFrame int
 
 	width  int
 	height int
@@ -255,9 +262,13 @@ func (m Model) selectedContainerName() string {
 	return m.podDetail.Containers[m.containerIdx].Name
 }
 
+type initFetchMsg struct{}
+
 // Init starts the spinner, loads the initially selected environment, and arms auto-refresh.
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.spinner.Tick, m.openSelectedEnv(), scheduleAutoRefresh())
+	return tea.Batch(m.spinner.Tick, scheduleAutoRefresh(), func() tea.Msg {
+		return initFetchMsg{}
+	})
 }
 
 func scheduleAutoRefresh() tea.Cmd {
@@ -279,29 +290,24 @@ func clampIndex(cur, length int) int {
 	return cur
 }
 
-func (m Model) openSelectedEnv() tea.Cmd {
+func (m Model) openSelectedEnvTracked() (tea.Model, tea.Cmd) {
 	env, poolIdx, envIdx, ok := m.selectedEnv()
 	if !ok {
-		return nil
+		return m, nil
 	}
 	if env.Namespace != "" {
-		return func() tea.Msg {
+		m.rightView = viewWorkloads
+		m.namespace = env.Namespace
+		m.loading = true
+		return m.tracked(m.kubectlLineWorkloads(env.Namespace), false, func() tea.Msg {
 			return m.fetchWorkloads(env, poolIdx, envIdx, env.Namespace)
-		}
+		})
 	}
-	return func() tea.Msg {
+	m.rightView = viewNamespaces
+	m.loading = true
+	return m.tracked(m.kubectlLineNamespaces(), false, func() tea.Msg {
 		return m.fetchNamespaces(env, poolIdx, envIdx)
-	}
-}
-
-func (m Model) loadNamespaces() tea.Cmd {
-	env, poolIdx, envIdx, ok := m.selectedEnv()
-	if !ok {
-		return nil
-	}
-	return func() tea.Msg {
-		return m.fetchNamespaces(env, poolIdx, envIdx)
-	}
+	})
 }
 
 func unavailableHint(env config.Environment) string {
@@ -365,12 +371,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.MouseMsg:
-		if m.rightView != viewPodLogs {
-			return m, nil
-		}
 		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft && msg.Ctrl {
-			if idx, ok := m.logLogicalIdxAtScreen(msg.X, msg.Y); ok {
-				m.copyLogLogicalLine(idx)
+			if m.showCmds {
+				if id, ok := m.cmdLogIDAtScreen(msg.X, msg.Y); ok {
+					if e, found := cmdEntryByID(m.cmdLog, id); found {
+						if err := copyToClipboard(e.Line); err != nil {
+							m.status = "clipboard failed: " + err.Error()
+						} else {
+							m.status = "copied"
+							m.err = ""
+						}
+						return m, nil
+					}
+				}
+			}
+			if m.rightView == viewPodLogs {
+				if idx, ok := m.logLogicalIdxAtScreen(msg.X, msg.Y); ok {
+					m.copyLogLogicalLine(idx)
+				}
 			}
 		}
 		return m, nil
@@ -378,14 +396,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
-		return m, cmd
+		return m, tea.Batch(cmd, m.maybeCmdAnim())
+
+	case cmdAnimMsg:
+		m.cmdAnimFrame++
+		return m, m.maybeCmdAnim()
+
+	case cmdDoneMsg:
+		m.finishCmd(msg.id, msg.err)
+		inner, cmd := m.Update(msg.inner)
+		m2 := inner.(Model)
+		return m2, tea.Batch(cmd, m2.maybeCmdAnim())
+
+	case initFetchMsg:
+		return m.openSelectedEnvTracked()
 
 	case autoRefreshMsg:
 		next := scheduleAutoRefresh()
 		if m.rightView == viewPodLogs || m.loading || m.autoRefreshBusy {
 			return m, next
 		}
-		cmd := m.quietRefreshCmd()
+		var cmd tea.Cmd
+		m, cmd = m.quietRefresh()
 		if cmd == nil {
 			return m, next
 		}
@@ -570,6 +602,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.id != m.logFollowID {
 			return m, nil
 		}
+		if m.logFollowCmdID != 0 {
+			m.finishCmd(m.logFollowCmdID, msg.err)
+			m.logFollowCmdID = 0
+		}
 		m.loading = false
 		if msg.err != nil && m.rightView == viewPodLogs {
 			m.err = msg.err.Error()
@@ -577,12 +613,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else if m.rightView == viewPodLogs {
 			m.status = ""
 		}
-		return m, nil
+		return m, m.maybeCmdAnim()
 
 	case ensureMsg:
+		if msg.cmdID != 0 {
+			m.finishCmd(msg.cmdID, msg.err)
+		}
 		env, poolIdx, envIdx, ok := m.selectedEnv()
 		if !ok || poolIdx != msg.poolIdx || envIdx != msg.envIdx {
-			return m, nil
+			return m, m.maybeCmdAnim()
 		}
 		m.loading = false
 		kube.ClearClientCache()
@@ -591,7 +630,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.err = msg.err.Error()
 			m.status = ""
-			return m, nil
+			return m, m.maybeCmdAnim()
 		}
 		m.err = ""
 		m.status = "credentials updated"
@@ -604,25 +643,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if env.Namespace != "" {
 			m.rightView = viewWorkloads
 			m.namespace = env.Namespace
-			return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
+			line := m.kubectlLineWorkloads(env.Namespace)
+			return m.tracked(line, false, func() tea.Msg {
 				return m.fetchWorkloads(env, poolIdx, envIdx, env.Namespace)
 			})
 		}
 		m.rightView = viewNamespaces
 		m.namespace = ""
-		return m, tea.Batch(m.spinner.Tick, m.loadNamespaces())
+		return m.tracked(m.kubectlLineNamespaces(), false, func() tea.Msg {
+			return m.fetchNamespaces(env, poolIdx, envIdx)
+		})
 
 	case loginMsg:
+		if msg.cmdID != 0 {
+			m.finishCmd(msg.cmdID, msg.err)
+		}
 		env, poolIdx, envIdx, ok := m.selectedEnv()
 		if !ok || poolIdx != msg.poolIdx || envIdx != msg.envIdx {
-			return m, nil
+			return m, m.maybeCmdAnim()
 		}
 		if msg.err != nil {
 			applog.Infof("az login finished: error: %v", msg.err)
 			m.loading = false
 			m.err = msg.err.Error()
 			m.status = ""
-			return m, nil
+			return m, m.maybeCmdAnim()
 		}
 		applog.Infof("az login finished: ok")
 		if env.Azure != nil && env.Azure.Subscription != "" {
@@ -638,9 +683,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.ensureCredentials()
 
 	case execMsg:
+		if msg.cmdID != 0 {
+			m.finishCmd(msg.cmdID, msg.err)
+		}
 		_, poolIdx, envIdx, ok := m.selectedEnv()
 		if !ok || poolIdx != msg.poolIdx || envIdx != msg.envIdx {
-			return m, nil
+			return m, m.maybeCmdAnim()
 		}
 		m.loading = false
 		m.status = ""
@@ -649,7 +697,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.err = ""
 		}
-		return m, nil
+		return m, m.maybeCmdAnim()
 
 	case tea.KeyMsg:
 		// While filtering logs, capture keys before global hotkeys (r/c/a/…).
@@ -685,7 +733,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "c":
 			m.showCmds = !m.showCmds
-			return m, nil
+			return m, m.maybeCmdAnim()
 		case "g":
 			if m.focus == paneRight && m.rightView == viewPodDetail {
 				return m.openPodLogs()
@@ -717,9 +765,11 @@ func (m Model) ensureCredentials() (tea.Model, tea.Cmd) {
 	m.loading = true
 	m.err = ""
 	m.status = "ensuring credentials…"
-	return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
+	line := "az aks get-credentials + kubelogin (" + env.Name + ")"
+	id := m.beginCmd(line, false)
+	return m, tea.Batch(m.spinner.Tick, m.maybeCmdAnim(), func() tea.Msg {
 		err := azure.EnsureCredentials(env)
-		return ensureMsg{poolIdx: poolIdx, envIdx: envIdx, err: err}
+		return ensureMsg{poolIdx: poolIdx, envIdx: envIdx, cmdID: id, err: err}
 	})
 }
 
@@ -740,15 +790,18 @@ func (m Model) azLogin() (tea.Model, tea.Cmd) {
 	supportsLoginSub := azure.DetectLoginSubscriptionSupport()
 	m.loading = true
 	m.err = ""
+	line := "az login"
 	if supportsLoginSub {
 		m.status = "az login -s " + env.Azure.Subscription + "…"
+		line = "az login -s " + env.Azure.Subscription
 	} else {
 		m.status = "az login…"
 	}
+	id := m.beginCmd(line, false)
 	cmd := azure.PrepareLoginCmd(env.Azure.Subscription)
-	return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
-		return loginMsg{poolIdx: poolIdx, envIdx: envIdx, err: err}
-	})
+	return m, tea.Batch(m.maybeCmdAnim(), tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return loginMsg{poolIdx: poolIdx, envIdx: envIdx, cmdID: id, err: err}
+	}))
 }
 
 func (m Model) openPodLogs() (tea.Model, tea.Cmd) {
@@ -766,14 +819,16 @@ func (m Model) execIntoContainer() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	args := kubectlExecArgs(env, m.namespace, m.podName, container)
+	line := kubectlExecLine(env, m.namespace, m.podName, container)
 	applog.Infof("starting interactive: kubectl %s", strings.Join(args, " "))
 	m.loading = true
 	m.err = ""
 	m.status = fmt.Sprintf("exec %s / %s…", m.podName, container)
+	id := m.beginCmd(line, false)
 	cmd := exec.Command("kubectl", args...)
-	return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
-		return execMsg{poolIdx: poolIdx, envIdx: envIdx, err: err}
-	})
+	return m, tea.Batch(m.maybeCmdAnim(), tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return execMsg{poolIdx: poolIdx, envIdx: envIdx, cmdID: id, err: err}
+	}))
 }
 
 // kubectlExecArgs builds kubectl exec -it … -- sh -c 'bash || sh'.
@@ -805,79 +860,83 @@ func (m Model) refresh() (tea.Model, tea.Cmd) {
 	switch m.rightView {
 	case viewPodDetail:
 		ns, pod := m.namespace, m.podName
-		return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
+		m, cmd := m.tracked(m.kubectlLinePodDetail(ns, pod), false, func() tea.Msg {
 			msg := m.fetchPodDetail(env, poolIdx, envIdx, ns, pod).(podDetailMsg)
 			msg.silent = true
 			return msg
 		})
+		return m, tea.Batch(m.spinner.Tick, cmd)
 	case viewPods:
 		ns, dep := m.namespace, m.deployment
-		return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
+		m, cmd := m.tracked(m.kubectlLinePods(ns, dep), false, func() tea.Msg {
 			msg := m.fetchPods(env, poolIdx, envIdx, ns, dep).(podsMsg)
 			msg.silent = true
 			return msg
 		})
+		return m, tea.Batch(m.spinner.Tick, cmd)
 	case viewWorkloads:
 		ns := m.namespace
-		return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
+		m, cmd := m.tracked(m.kubectlLineWorkloads(ns), false, func() tea.Msg {
 			msg := m.fetchWorkloads(env, poolIdx, envIdx, ns).(workloadsMsg)
 			msg.silent = true
 			return msg
 		})
+		return m, tea.Batch(m.spinner.Tick, cmd)
 	default:
-		return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
+		m, cmd := m.tracked(m.kubectlLineNamespaces(), false, func() tea.Msg {
 			msg := m.fetchNamespaces(env, poolIdx, envIdx).(namespacesMsg)
 			msg.silent = true
 			return msg
 		})
+		return m, tea.Batch(m.spinner.Tick, cmd)
 	}
 }
 
-// quietRefreshCmd re-fetches the current right view without a spinner/loading flash.
-func (m Model) quietRefreshCmd() tea.Cmd {
+// quietRefresh re-fetches the current right view without a spinner/loading flash.
+func (m Model) quietRefresh() (Model, tea.Cmd) {
 	env, poolIdx, envIdx, ok := m.selectedEnv()
 	if !ok || !m.available[envKey(env)] {
-		return nil
+		return m, nil
 	}
 	switch m.rightView {
 	case viewPodDetail:
 		if m.podName == "" {
-			return nil
+			return m, nil
 		}
 		ns, pod := m.namespace, m.podName
-		return func() tea.Msg {
+		return m.tracked(m.kubectlLinePodDetail(ns, pod), false, func() tea.Msg {
 			msg := m.fetchPodDetail(env, poolIdx, envIdx, ns, pod).(podDetailMsg)
 			msg.silent = true
 			return msg
-		}
+		})
 	case viewPods:
 		if m.namespace == "" || m.deployment == "" {
-			return nil
+			return m, nil
 		}
 		ns, dep := m.namespace, m.deployment
-		return func() tea.Msg {
+		return m.tracked(m.kubectlLinePods(ns, dep), false, func() tea.Msg {
 			msg := m.fetchPods(env, poolIdx, envIdx, ns, dep).(podsMsg)
 			msg.silent = true
 			return msg
-		}
+		})
 	case viewWorkloads:
 		if m.namespace == "" {
-			return nil
+			return m, nil
 		}
 		ns := m.namespace
-		return func() tea.Msg {
+		return m.tracked(m.kubectlLineWorkloads(ns), false, func() tea.Msg {
 			msg := m.fetchWorkloads(env, poolIdx, envIdx, ns).(workloadsMsg)
 			msg.silent = true
 			return msg
-		}
+		})
 	case viewNamespaces:
-		return func() tea.Msg {
+		return m.tracked(m.kubectlLineNamespaces(), false, func() tea.Msg {
 			msg := m.fetchNamespaces(env, poolIdx, envIdx).(namespacesMsg)
 			msg.silent = true
 			return msg
-		}
+		})
 	default:
-		return nil
+		return m, nil
 	}
 }
 
@@ -923,13 +982,17 @@ func (m Model) updateLeft(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if env.Namespace != "" {
 			m.rightView = viewWorkloads
 			m.namespace = env.Namespace
-			return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
+			m, cmd := m.tracked(m.kubectlLineWorkloads(env.Namespace), false, func() tea.Msg {
 				return m.fetchWorkloads(env, row.poolIdx, row.envIdx, env.Namespace)
 			})
+			return m, tea.Batch(m.spinner.Tick, cmd)
 		}
 		m.rightView = viewNamespaces
 		m.namespace = ""
-		return m, tea.Batch(m.spinner.Tick, m.loadNamespaces())
+		m, cmd := m.tracked(m.kubectlLineNamespaces(), false, func() tea.Msg {
+			return m.fetchNamespaces(env, row.poolIdx, row.envIdx)
+		})
+		return m, tea.Batch(m.spinner.Tick, cmd)
 	case "left", "h":
 		if len(m.leftRows) == 0 {
 			return m, nil
@@ -1132,6 +1195,52 @@ func (m *Model) copyLogLogicalLine(logicalIdx int) {
 	m.err = ""
 }
 
+// cmdLogIDAtScreen maps a click in the commands panel to a cmd entry id.
+func (m Model) cmdLogIDAtScreen(x, y int) (int, bool) {
+	if !m.showCmds || m.width == 0 {
+		return 0, false
+	}
+	bodyH, cmdsH := layoutHeights(m.height, m.showCmds)
+	if cmdsH < 1 {
+		return 0, false
+	}
+	// y0 header; body; then cmds panel
+	panelTop := 1 + bodyH
+	if y < panelTop || y >= panelTop+cmdsH {
+		return 0, false
+	}
+	rowInPanel := y - panelTop
+	// top border = 0; content from 1
+	contentRow := rowInPanel - 1
+	if contentRow < 0 {
+		return 0, false
+	}
+	inner := cmdsH - 2
+	if inner < 1 {
+		inner = 1
+	}
+	rows := buildCmdPanelRows(m.cmdLog, m.cmdAnimFrame, time.Now(), m.width)
+	if len(rows) > inner {
+		keep := inner - 1
+		if keep < 0 {
+			keep = 0
+		}
+		tail := rows[1:]
+		if len(tail) > keep {
+			tail = tail[len(tail)-keep:]
+		}
+		rows = append([]cmdPanelRow{rows[0]}, tail...)
+	}
+	if contentRow >= len(rows) {
+		return 0, false
+	}
+	r := rows[contentRow]
+	if r.kind == "title" || r.entryID == 0 {
+		return 0, false
+	}
+	return r.entryID, true
+}
+
 // logLogicalIdxAtScreen maps terminal mouse coords to a filtered logical line index.
 func (m Model) logLogicalIdxAtScreen(x, y int) (int, bool) {
 	if m.rightView != viewPodLogs || m.width == 0 {
@@ -1218,9 +1327,10 @@ func (m Model) openRight() (tea.Model, tea.Cmd) {
 		m.loading = true
 		m.err = ""
 		m.status = ""
-		return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
+		m, cmd := m.tracked(m.kubectlLineWorkloads(ns), false, func() tea.Msg {
 			return m.fetchWorkloads(env, poolIdx, envIdx, ns)
 		})
+		return m, tea.Batch(m.spinner.Tick, cmd)
 	case viewWorkloads:
 		if len(m.workloads) == 0 {
 			return m, nil
@@ -1234,9 +1344,10 @@ func (m Model) openRight() (tea.Model, tea.Cmd) {
 		m.err = ""
 		m.status = ""
 		ns := m.namespace
-		return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
+		m, cmd := m.tracked(m.kubectlLinePods(ns, dep), false, func() tea.Msg {
 			return m.fetchPods(env, poolIdx, envIdx, ns, dep)
 		})
+		return m, tea.Batch(m.spinner.Tick, cmd)
 	case viewPods:
 		if len(m.pods) == 0 {
 			return m, nil
@@ -1250,9 +1361,10 @@ func (m Model) openRight() (tea.Model, tea.Cmd) {
 		m.err = ""
 		m.status = ""
 		ns := m.namespace
-		return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
+		m, cmd := m.tracked(m.kubectlLinePodDetail(ns, pod), false, func() tea.Msg {
 			return m.fetchPodDetail(env, poolIdx, envIdx, ns, pod)
 		})
+		return m, tea.Batch(m.spinner.Tick, cmd)
 	case viewPodDetail:
 		return m.openPodLogs()
 	}
@@ -1285,9 +1397,10 @@ func (m Model) backRight() (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		ns, dep := m.namespace, m.deployment
-		return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
+		m, cmd := m.tracked(m.kubectlLinePods(ns, dep), false, func() tea.Msg {
 			return m.fetchPods(env, poolIdx, envIdx, ns, dep)
 		})
+		return m, tea.Batch(m.spinner.Tick, cmd)
 	case viewPods:
 		m.rightView = viewWorkloads
 		m.pods = nil
@@ -1301,9 +1414,10 @@ func (m Model) backRight() (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		ns := m.namespace
-		return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
+		m, cmd := m.tracked(m.kubectlLineWorkloads(ns), false, func() tea.Msg {
 			return m.fetchWorkloads(env, poolIdx, envIdx, ns)
 		})
+		return m, tea.Batch(m.spinner.Tick, cmd)
 	case viewWorkloads:
 		// Always return to the left pools pane (skip namespaces; often Forbidden).
 		m.workloads = nil
@@ -1419,30 +1533,50 @@ func (m Model) renderCmdsPanel(width, height int) string {
 	if inner < 1 {
 		inner = 1
 	}
+	now := time.Now()
+	rows := buildCmdPanelRows(m.cmdLog, m.cmdAnimFrame, now, width)
+	// Show newest entries that fit (title + tail).
+	if len(rows) > inner {
+		keep := inner - 1
+		if keep < 0 {
+			keep = 0
+		}
+		tail := rows[1:]
+		if len(tail) > keep {
+			tail = tail[len(tail)-keep:]
+		}
+		rows = append([]cmdPanelRow{rows[0]}, tail...)
+	}
 	var b strings.Builder
-	linesLeft := inner
-	writeLine := func(s string) {
-		if linesLeft <= 0 {
-			return
+	dotBright := m.cmdAnimFrame%2 == 0
+	for _, row := range rows {
+		switch row.kind {
+		case "title":
+			b.WriteString(sectionStyle.Render(row.text) + "\n")
+		case "err":
+			b.WriteString(errorStyle.Render("  "+row.text) + "\n")
+		default:
+			cmdCols := row.cmdCols
+			if cmdCols < 8 {
+				cmdCols = 8
+			}
+			cmdPart := padRightRunes(row.text, cmdCols)
+			timing := padLeftRunes(row.timing, cmdTimingColWidth)
+			var prefix string
+			if row.running {
+				dot := cmdsDotDim
+				if dotBright {
+					dot = cmdsDotBright
+				}
+				prefix = dot.Render("●") + " "
+			} else {
+				prefix = cmdsStyle.Render("  ")
+			}
+			b.WriteString(prefix + cmdsStyle.Render(cmdPart+" "+timing) + "\n")
 		}
-		b.WriteString(s + "\n")
-		linesLeft--
 	}
-	writeLine(sectionStyle.Render("View"))
-	for _, line := range m.kubectlRecipes() {
-		writeLine(mutedStyle.Render(truncate(line, width-4)))
-	}
-	writeLine(sectionStyle.Render("Shell"))
-	shell := applog.RecentCmds()
-	if len(shell) == 0 {
-		writeLine(mutedStyle.Render("(no shell commands yet)"))
-	} else {
-		if len(shell) > linesLeft {
-			shell = shell[len(shell)-linesLeft:]
-		}
-		for _, line := range shell {
-			writeLine(mutedStyle.Render(truncate("$ "+line, width-4)))
-		}
+	if len(m.cmdLog) == 0 {
+		b.WriteString(cmdsStyle.Render("(no commands yet)") + "\n")
 	}
 	return fitBox(paneStyle, width, height, b.String())
 }
@@ -1736,7 +1870,10 @@ var (
 	helpStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 	footerStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
 	sectionStyle     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("99"))
-	itemStyle        = lipgloss.NewStyle()
+	cmdsStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	cmdsDotBright = lipgloss.NewStyle().Foreground(lipgloss.Color("65"))  // soft green
+	cmdsDotDim    = lipgloss.NewStyle().Foreground(lipgloss.Color("238")) // near-muted
+	itemStyle     = lipgloss.NewStyle()
 	selectedStyle    = lipgloss.NewStyle().Background(lipgloss.Color("62")).Foreground(lipgloss.Color("230"))
 	selectedDimStyle = lipgloss.NewStyle().Background(lipgloss.Color("236")).Foreground(lipgloss.Color("252"))
 	unavailableStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Italic(true)

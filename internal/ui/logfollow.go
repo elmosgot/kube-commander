@@ -38,6 +38,10 @@ func listenLogFollow(ch <-chan tea.Msg) tea.Cmd {
 }
 
 func (m *Model) stopLogFollow() {
+	if m.logFollowCmdID != 0 {
+		m.finishCmd(m.logFollowCmdID, nil)
+		m.logFollowCmdID = 0
+	}
 	if m.logFollowCancel != nil {
 		m.logFollowCancel()
 		m.logFollowCancel = nil
@@ -70,11 +74,12 @@ func (m Model) startLogFollow() (Model, tea.Cmd) {
 	m.loading = true
 	m.err = ""
 	m.status = "following logs…"
+	m.logFollowCmdID = m.beginCmd(m.kubectlLogsFollowLine(), true)
 
 	ns, pod := m.namespace, m.podName
 	ch := make(chan tea.Msg, 32)
 	go runLogFollow(ctx, env, ns, pod, container, id, ch)
-	return m, tea.Batch(m.spinner.Tick, listenLogFollow(ch))
+	return m, tea.Batch(m.spinner.Tick, m.maybeCmdAnim(), listenLogFollow(ch))
 }
 
 func runLogFollow(ctx context.Context, env config.Environment, namespace, pod, container string, id int, ch chan tea.Msg) {
