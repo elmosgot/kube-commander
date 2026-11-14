@@ -82,7 +82,9 @@ func (m Model) startLogFollow() (Model, tea.Cmd) {
 	return m, tea.Batch(m.spinner.Tick, m.maybeCmdAnim(), listenLogFollow(ch))
 }
 
-func runLogFollow(ctx context.Context, env config.Environment, namespace, pod, container string, id int, ch chan tea.Msg) {
+func runLogFollow(
+	ctx context.Context, env config.Environment, namespace, pod, container string, id int, ch chan tea.Msg,
+) {
 	defer close(ch)
 
 	stream, err := openLogStream(ctx, env, namespace, pod, container)
@@ -100,7 +102,9 @@ func runLogFollow(ctx context.Context, env config.Environment, namespace, pod, c
 }
 
 // openLogStream builds a client and starts the follow stream for one container.
-func openLogStream(ctx context.Context, env config.Environment, namespace, pod, container string) (io.ReadCloser, error) {
+func openLogStream(
+	ctx context.Context, env config.Environment, namespace, pod, container string,
+) (io.ReadCloser, error) {
 	client, err := kube.NewClient(env)
 	if err != nil {
 		return nil, err

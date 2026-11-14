@@ -9,6 +9,8 @@ const (
 	tTesting   = "testing"
 	tPoolXTest = "pool-x-test"
 	tMyAPI     = "my-api"
+	tMyAPIAbc  = "my-api-abc"
 	tReady11   = "1/1"
 	tFilterTok = "f|/"
+	tRunning   = "Running"
 )

@@ -94,7 +94,7 @@ func Load(path, examplePath string) (*Config, string, error) {
 // loadFallback handles a failed read of the primary config path. When the default
 // config is simply missing it falls back to examplePath; otherwise it wraps readErr.
 func loadFallback(path, examplePath string, readErr error) (data []byte, resolved string, err error) {
-	if !(os.IsNotExist(readErr) && path == DefaultPath() && examplePath != "") {
+	if !os.IsNotExist(readErr) || path != DefaultPath() || examplePath == "" {
 		return nil, "", fmt.Errorf("read config %q: %w", path, readErr)
 	}
 	// examplePath is a trusted, program-provided bundled config path.

@@ -48,13 +48,13 @@ func TestModelRendersPools(t *testing.T) {
 	view := m.View()
 	for _, want := range []string{
 		"kube-commander", "Pools", "pool-x", tTesting, "pool-y",
-		"namespace=app", "kubeconfig=", helpAzLogin, "l ensure", "c commands",
+		"namespace=app", "kubeconfig=", helpAzLogin, helpEnsure, "c commands",
 	} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("view missing %q:\n%s", want, view)
 		}
 	}
-	for _, notWant := range []string{helpLogs, helpFilter, "s shell"} {
+	for _, notWant := range []string{helpLogs, helpFilter, helpShell} {
 		if strings.Contains(view, notWant) {
 			t.Fatalf("left-pane view unexpectedly has %q:\n%s", notWant, view)
 		}
@@ -210,7 +210,7 @@ func TestPodsMsgOpensPodsView(t *testing.T) {
 		namespace:  tApp,
 		deployment: tMyAPI,
 		items: []kube.PodInfo{
-			{Name: "my-api-abc", Ready: tReady11, Restarts: 0, Status: "Running", Age: "3d"},
+			{Name: tMyAPIAbc, Ready: tReady11, Restarts: 0, Status: tRunning, Age: "3d"},
 		},
 	})
 	m = updated.(Model)
@@ -242,17 +242,17 @@ func TestPodDetailAndBackspace(t *testing.T) {
 		poolIdx:   0,
 		envIdx:    0,
 		namespace: "ns",
-		pod:       "my-api-abc",
+		pod:       tMyAPIAbc,
 		detail: &kube.PodDetail{
-			Name:  "my-api-abc",
-			Phase: "Running",
+			Name:  tMyAPIAbc,
+			Phase: tRunning,
 			Ready: tReady11,
 			Node:  "node-1",
 			PodIP: "10.0.0.1",
 			Age:   "2d",
 			Containers: []kube.ContainerInfo{
 				{
-					Name: tApp, Image: "img:1", Ready: true, State: "Running",
+					Name: tApp, Image: "img:1", Ready: true, State: tRunning,
 					CPURequest: "100m", CPULimit: "500m", MemRequest: "128Mi", MemLimit: "512Mi",
 				},
 			},

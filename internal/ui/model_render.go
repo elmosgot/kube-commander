@@ -87,18 +87,18 @@ func (m Model) renderHelp() string {
 
 	parts := []string{"↑↓ move", "tab focus"}
 	if m.focus == paneLeft {
-		parts = append(parts, "enter open", helpAzLogin, "l ensure", "c commands", "r refresh", "q quit")
+		parts = append(parts, helpEnterOpen, helpAzLogin, helpEnsure, "c commands", "r refresh", "q quit")
 	} else {
 		switch m.rightView {
 		case viewPodDetail:
-			parts = append(parts, helpLogs, "s shell", helpBackspaceBack, "c commands", "r refresh", "q quit")
+			parts = append(parts, helpLogs, helpShell, helpBackspaceBack, "c commands", "r refresh", "q quit")
 		case viewPodLogs:
 			parts = append(parts,
 				helpFilter, "y copy", "ctrl+click copy", "r restart follow",
 				helpBackspaceBack, "c commands", "q quit",
 			)
 		default:
-			parts = append(parts, "enter open", helpBackspaceBack, "c commands", "r refresh", "q quit")
+			parts = append(parts, helpEnterOpen, helpBackspaceBack, "c commands", "r refresh", "q quit")
 		}
 	}
 	return helpStyle.Render(truncate(strings.Join(parts, " · "), m.width))

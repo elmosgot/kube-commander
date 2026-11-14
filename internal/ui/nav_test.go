@@ -65,7 +65,7 @@ func TestNamespacesForbiddenReturnsToLeft(t *testing.T) {
 func TestRenderPodRowsIncludesResources(t *testing.T) {
 	m := New(testConfig(), "test.yaml")
 	m.pods = []kube.PodInfo{{
-		Name: tAPI1, Ready: tReady11, Restarts: 0, Status: "Running", Age: "1h",
+		Name: tAPI1, Ready: tReady11, Restarts: 0, Status: tRunning, Age: "1h",
 		CPURequest: "100m", CPULimit: "200m", MemRequest: "128Mi", MemLimit: "256Mi",
 	}}
 	var b strings.Builder

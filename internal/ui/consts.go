@@ -6,7 +6,10 @@ const (
 	keyDown = "down"
 
 	helpAzLogin       = "a az login"
+	helpEnsure        = "l ensure"
+	helpEnterOpen     = "enter open"
 	helpLogs          = "g logs"
+	helpShell         = "s shell"
 	helpBackspaceBack = "backspace back"
 	helpFilter        = "f|/ filter"
 )

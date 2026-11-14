@@ -100,7 +100,9 @@ func Init() error {
 
 	name := fmt.Sprintf("session-%s.log", nowFn().Format("20060102-150405"))
 	path := filepath.Join(dir, name)
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	// path is derived from the program-controlled log dir and a timestamped name.
+	const flags = os.O_CREATE | os.O_WRONLY | os.O_APPEND
+	f, err := os.OpenFile(path, flags, 0o600) //nolint:gosec // G304: trusted session log path
 	if err != nil {
 		return fmt.Errorf("open session log: %w", err)
 	}
