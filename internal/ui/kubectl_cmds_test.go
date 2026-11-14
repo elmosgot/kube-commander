@@ -13,20 +13,20 @@ import (
 func TestKubectlLineBuilders(t *testing.T) {
 	m := New(testConfig(), "test.yaml")
 	m.leftCursor = 1
-	m.namespace = "app"
-	m.deployment = "api"
-	m.podName = "api-1"
+	m.namespace = tApp
+	m.deployment = tAPI
+	m.podName = tAPI1
 	m.rightView = viewWorkloads
-	if got := m.kubectlLineWorkloads("app"); !strings.Contains(got, "-n app get deployments") {
+	if got := m.kubectlLineWorkloads(tApp); !strings.Contains(got, "-n app get deployments") {
 		t.Fatalf("workloads: %s", got)
 	}
 	m.rightView = viewPods
-	if got := m.kubectlLinePods("app", "api"); !strings.Contains(got, "get pods") {
+	if got := m.kubectlLinePods(tApp, tAPI); !strings.Contains(got, "get pods") {
 		t.Fatalf("pods: %s", got)
 	}
 	m.podDetail = &kube.PodDetail{
-		Name:       "api-1",
-		Containers: []kube.ContainerInfo{{Name: "app"}},
+		Name:       tAPI1,
+		Containers: []kube.ContainerInfo{{Name: tApp}},
 	}
 	m.rightView = viewPodLogs
 	if got := m.kubectlLogsFollowLine(); !strings.Contains(got, "logs api-1 --tail=200 --follow") {
@@ -170,7 +170,7 @@ func TestExecIntoContainerReturnsExecCmd(t *testing.T) {
 	m.podName = "pod"
 	m.podDetail = &kube.PodDetail{
 		Name:       "pod",
-		Containers: []kube.ContainerInfo{{Name: "app"}},
+		Containers: []kube.ContainerInfo{{Name: tApp}},
 	}
 	m.leftCursor = 1
 

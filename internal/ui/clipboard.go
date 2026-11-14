@@ -17,7 +17,8 @@ func copyToClipboard(text string) error {
 	}
 	var lastErr error
 	for _, c := range candidates {
-		cmd := exec.Command(c[0], c[1:]...)
+		// Commands come from clipboardCommands(), a fixed allowlist of known tools.
+		cmd := exec.Command(c[0], c[1:]...) //nolint:gosec // G204: fixed clipboard tool allowlist
 		cmd.Stdin = strings.NewReader(text)
 		var stderr bytes.Buffer
 		cmd.Stderr = &stderr

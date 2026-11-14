@@ -15,7 +15,7 @@ func TestInitPrunesToTenSessions(t *testing.T) {
 
 	for i := 1; i <= 12; i++ {
 		name := filepath.Join(dir, fmt.Sprintf("session-20260101-1200%02d.log", i))
-		if err := os.WriteFile(name, []byte("old\n"), 0o644); err != nil {
+		if err := os.WriteFile(name, []byte("old\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}

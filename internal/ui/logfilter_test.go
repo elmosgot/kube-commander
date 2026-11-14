@@ -24,7 +24,7 @@ func TestLogFilterActivateAndMatch(t *testing.T) {
 
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e', 'r', 'r'}})
 	m = updated.(Model)
-	if m.logFilter != "err" {
+	if m.logFilter != tErr {
 		t.Fatalf("filter = %q", m.logFilter)
 	}
 	lines := m.filteredLogLines()
@@ -146,7 +146,7 @@ func TestLogFilterExcludePrefix(t *testing.T) {
 	m.logFilterActive = true
 	m.logText = "GET /ready\nPOST /orders\nGET /readyz\nERROR boom"
 
-	m.logFilter = "err"
+	m.logFilter = tErr
 	lines := m.filteredLogLines()
 	if len(lines) != 1 || !strings.Contains(lines[0], "ERROR") {
 		t.Fatalf("positive filter = %v", lines)
@@ -175,12 +175,12 @@ func TestLogFilterIgnoresControlRunes(t *testing.T) {
 	m.focus = paneRight
 	m.rightView = viewPodLogs
 	m.logFilterActive = true
-	m.logFilter = "err"
+	m.logFilter = tErr
 	m.logText = "error\nready\n"
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{0x1b}}) // ESC from Alt
 	m = updated.(Model)
-	if m.logFilter != "err" {
+	if m.logFilter != tErr {
 		t.Fatalf("control rune altered filter: %q", m.logFilter)
 	}
 

@@ -95,8 +95,12 @@ func PrepareLoginCmd(subscription string) *exec.Cmd {
 	supportsLoginSub := DetectLoginSubscriptionSupport()
 	args := LoginArgs(subscription, supportsLoginSub)
 	azBin := ResolveAzBinary()
-	applog.Infof("starting interactive: %s %s (AZURE_CORE_LOGIN_EXPERIENCE_V2=off AZURE_CORE_OUTPUT=none)", azBin, strings.Join(args, " "))
-	cmd := exec.Command(azBin, args...)
+	applog.Infof(
+		"starting interactive: %s %s (AZURE_CORE_LOGIN_EXPERIENCE_V2=off AZURE_CORE_OUTPUT=none)",
+		azBin, strings.Join(args, " "),
+	)
+	// azBin resolves to a fixed path ("/usr/bin/az" or "az"); args come from trusted config.
+	cmd := exec.Command(azBin, args...) //nolint:gosec // G204: fixed az binary, args from config
 	cmd.Env = append(os.Environ(),
 		EnvLoginExperienceV2+"=off",
 		EnvCoreOutput+"=none",
@@ -169,11 +173,12 @@ func DetectLoginSubscriptionSupport() bool {
 	azVersionOnce.Do(func() {
 		azBin := ResolveAzBinary()
 		args := []string{"version", "-o", "json"}
-		out, err := exec.Command(azBin, args...).Output()
+		// azBin is a fixed path/name and args are constant here.
+		out, err := exec.Command(azBin, args...).Output() //nolint:gosec // G204: fixed az binary, constant args
 		applog.Cmd(azBin, args, string(out), err)
 		if err != nil {
 			args = []string{"--version"}
-			out, err = exec.Command(azBin, args...).Output()
+			out, err = exec.Command(azBin, args...).Output() //nolint:gosec // G204: fixed az binary, constant args
 			applog.Cmd(azBin, args, string(out), err)
 		}
 		if err != nil {
@@ -214,7 +219,8 @@ func isExecutable(path string) bool {
 }
 
 func runCmd(name string, args ...string) error {
-	cmd := exec.Command(name, args...)
+	// name resolves to a fixed az/kubelogin binary; args come from trusted config.
+	cmd := exec.Command(name, args...) //nolint:gosec // G204: fixed binary, args from config
 	var buf bytes.Buffer
 	cmd.Stderr = &buf
 	cmd.Stdout = &buf

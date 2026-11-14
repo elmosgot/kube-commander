@@ -71,16 +71,12 @@ func Load(path, examplePath string) (*Config, string, error) {
 	}
 
 	resolved := path
-	data, err := os.ReadFile(path)
+	// path is a user-provided config path from flags/defaults; reading it is intended.
+	data, err := os.ReadFile(path) //nolint:gosec // G304: trusted config path
 	if err != nil {
-		if os.IsNotExist(err) && path == DefaultPath() && examplePath != "" {
-			data, err = os.ReadFile(examplePath)
-			if err != nil {
-				return nil, "", fmt.Errorf("default config %q missing and example %q unreadable: %w", path, examplePath, err)
-			}
-			resolved = examplePath
-		} else {
-			return nil, "", fmt.Errorf("read config %q: %w", path, err)
+		data, resolved, err = loadFallback(path, examplePath, err)
+		if err != nil {
+			return nil, "", err
 		}
 	}
 
@@ -93,6 +89,20 @@ func Load(path, examplePath string) (*Config, string, error) {
 	}
 	cfg.expandPaths()
 	return &cfg, resolved, nil
+}
+
+// loadFallback handles a failed read of the primary config path. When the default
+// config is simply missing it falls back to examplePath; otherwise it wraps readErr.
+func loadFallback(path, examplePath string, readErr error) (data []byte, resolved string, err error) {
+	if !os.IsNotExist(readErr) || path != DefaultPath() || examplePath == "" {
+		return nil, "", fmt.Errorf("read config %q: %w", path, readErr)
+	}
+	// examplePath is a trusted, program-provided bundled config path.
+	data, err = os.ReadFile(examplePath) //nolint:gosec // G304: trusted example config path
+	if err != nil {
+		return nil, "", fmt.Errorf("default config %q missing and example %q unreadable: %w", path, examplePath, err)
+	}
+	return data, examplePath, nil
 }
 
 // Validate checks required fields and uniqueness.

@@ -82,25 +82,58 @@ func (m Model) startLogFollow() (Model, tea.Cmd) {
 	return m, tea.Batch(m.spinner.Tick, m.maybeCmdAnim(), listenLogFollow(ch))
 }
 
-func runLogFollow(ctx context.Context, env config.Environment, namespace, pod, container string, id int, ch chan tea.Msg) {
+func runLogFollow(
+	ctx context.Context, env config.Environment, namespace, pod, container string, id int, ch chan tea.Msg,
+) {
 	defer close(ch)
 
+	stream, err := openLogStream(ctx, env, namespace, pod, container)
+	if err != nil {
+		ch <- logFollowDoneMsg{id: id, err: err, ch: ch}
+		return
+	}
+	defer func() { _ = stream.Close() }()
+
+	scanner := bufio.NewScanner(io.Reader(stream))
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	lines, errCh := scanLogLines(ctx, scanner)
+
+	pumpLogLines(ctx, id, ch, lines, errCh)
+}
+
+// openLogStream builds a client and starts the follow stream for one container.
+func openLogStream(
+	ctx context.Context, env config.Environment, namespace, pod, container string,
+) (io.ReadCloser, error) {
 	client, err := kube.NewClient(env)
 	if err != nil {
-		ch <- logFollowDoneMsg{id: id, err: err, ch: ch}
-		return
+		return nil, err
 	}
-	stream, err := client.FollowPodLogs(ctx, namespace, pod, container, 200)
-	if err != nil {
-		ch <- logFollowDoneMsg{id: id, err: err, ch: ch}
-		return
-	}
-	defer stream.Close()
+	return client.FollowPodLogs(ctx, namespace, pod, container, 200)
+}
 
-	reader := io.Reader(stream)
-	scanner := bufio.NewScanner(reader)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+// scanLogLines reads scanner lines into a channel until EOF or ctx cancellation.
+func scanLogLines(ctx context.Context, scanner *bufio.Scanner) (<-chan string, <-chan error) {
+	lines := make(chan string, 64)
+	errCh := make(chan error, 1)
+	go func() {
+		defer close(lines)
+		for scanner.Scan() {
+			select {
+			case lines <- scanner.Text():
+			case <-ctx.Done():
+				return
+			}
+		}
+		if err := scanner.Err(); err != nil {
+			errCh <- err
+		}
+	}()
+	return lines, errCh
+}
 
+// pumpLogLines batches scanned lines and forwards flushed chunks to ch until done.
+func pumpLogLines(ctx context.Context, id int, ch chan tea.Msg, lines <-chan string, errCh <-chan error) {
 	var buf strings.Builder
 	flush := func() {
 		if buf.Len() == 0 {
@@ -117,22 +150,6 @@ func runLogFollow(ctx context.Context, env config.Environment, namespace, pod, c
 	ticker := time.NewTicker(logFollowFlushEvery)
 	defer ticker.Stop()
 
-	lines := make(chan string, 64)
-	errCh := make(chan error, 1)
-	go func() {
-		defer close(lines)
-		for scanner.Scan() {
-			select {
-			case lines <- scanner.Text():
-			case <-ctx.Done():
-				return
-			}
-		}
-		if err := scanner.Err(); err != nil {
-			errCh <- err
-		}
-	}()
-
 	for {
 		select {
 		case <-ctx.Done():
@@ -141,26 +158,36 @@ func runLogFollow(ctx context.Context, env config.Environment, namespace, pod, c
 		case line, ok := <-lines:
 			if !ok {
 				flush()
-				var doneErr error
-				select {
-				case doneErr = <-errCh:
-				default:
-				}
-				if ctx.Err() != nil {
-					return
-				}
-				ch <- logFollowDoneMsg{id: id, err: doneErr, ch: ch}
+				finishLogFollow(ctx, id, ch, errCh)
 				return
 			}
-			if buf.Len() > 0 {
-				buf.WriteByte('\n')
-			}
-			buf.WriteString(line)
-			if buf.Len() >= 32*1024 {
-				flush()
-			}
+			appendLogLine(&buf, line, flush)
 		case <-ticker.C:
 			flush()
 		}
 	}
+}
+
+// appendLogLine adds line to buf, flushing early when the buffer grows large.
+func appendLogLine(buf *strings.Builder, line string, flush func()) {
+	if buf.Len() > 0 {
+		buf.WriteByte('\n')
+	}
+	buf.WriteString(line)
+	if buf.Len() >= 32*1024 {
+		flush()
+	}
+}
+
+// finishLogFollow emits the terminal done message unless ctx was cancelled.
+func finishLogFollow(ctx context.Context, id int, ch chan tea.Msg, errCh <-chan error) {
+	var doneErr error
+	select {
+	case doneErr = <-errCh:
+	default:
+	}
+	if ctx.Err() != nil {
+		return
+	}
+	ch <- logFollowDoneMsg{id: id, err: doneErr, ch: ch}
 }

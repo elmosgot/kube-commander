@@ -21,36 +21,36 @@ func TestRenderHelpContextSensitive(t *testing.T) {
 			name:    "left pane",
 			focus:   paneLeft,
 			view:    viewNamespaces,
-			want:    []string{"a az login", "l ensure", "enter open"},
-			notWant: []string{"f|/", "g logs", "s shell", "backspace"},
+			want:    []string{helpAzLogin, helpEnsure, helpEnterOpen},
+			notWant: []string{tFilterTok, helpLogs, helpShell, "backspace"},
 		},
 		{
 			name:    "right namespaces",
 			focus:   paneRight,
 			view:    viewNamespaces,
-			want:    []string{"enter open", "backspace back"},
-			notWant: []string{"a az login", "l ensure", "g logs", "f|/"},
+			want:    []string{helpEnterOpen, helpBackspaceBack},
+			notWant: []string{helpAzLogin, helpEnsure, helpLogs, tFilterTok},
 		},
 		{
 			name:    "pod detail",
 			focus:   paneRight,
 			view:    viewPodDetail,
-			want:    []string{"g logs", "s shell", "backspace back"},
-			notWant: []string{"a az login", "f|/", "enter open"},
+			want:    []string{helpLogs, helpShell, helpBackspaceBack},
+			notWant: []string{helpAzLogin, tFilterTok, helpEnterOpen},
 		},
 		{
 			name:    "pod logs",
 			focus:   paneRight,
 			view:    viewPodLogs,
-			want:    []string{"f|/ filter", "y copy", "ctrl+click copy", "r restart follow", "backspace back"},
-			notWant: []string{"a az login", "g logs", "s shell", "enter open", "r refresh"},
+			want:    []string{helpFilter, "y copy", "ctrl+click copy", "r restart follow", helpBackspaceBack},
+			notWant: []string{helpAzLogin, helpLogs, helpShell, helpEnterOpen, "r refresh"},
 		},
 		{
-			name:   "filter active",
-			focus:  paneRight,
-			view:   viewPodLogs,
-			filter: true,
-			want:   []string{"Filter:", "esc clear"},
+			name:    "filter active",
+			focus:   paneRight,
+			view:    viewPodLogs,
+			filter:  true,
+			want:    []string{"Filter:", "esc clear"},
 			notWant: []string{"tab focus", "c commands"},
 		},
 	}
@@ -62,7 +62,7 @@ func TestRenderHelpContextSensitive(t *testing.T) {
 			m.rightView = tc.view
 			m.logFilterActive = tc.filter
 			if tc.filter {
-				m.logFilter = "err"
+				m.logFilter = tErr
 			}
 			help := m.renderHelp()
 			for _, w := range tc.want {

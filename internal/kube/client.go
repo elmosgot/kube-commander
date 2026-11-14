@@ -22,6 +22,8 @@ const (
 	defaultTimeout = 8 * time.Second
 	logsTimeout    = 15 * time.Second
 	defaultTail    = 200
+
+	stateUnknown = "Unknown"
 )
 
 // NamespaceInfo is a summarized namespace row for the right pane.
@@ -58,15 +60,15 @@ type PodInfo struct {
 
 // ContainerInfo is one container in a pod detail view.
 type ContainerInfo struct {
-	Name         string
-	Image        string
-	Ready        bool
-	Restarts     int32
-	State        string
-	CPURequest   string
-	CPULimit     string
-	MemRequest   string
-	MemLimit     string
+	Name       string
+	Image      string
+	Ready      bool
+	Restarts   int32
+	State      string
+	CPURequest string
+	CPULimit   string
+	MemRequest string
+	MemLimit   string
 }
 
 // PodDetail is the full read-only pod detail.
@@ -286,7 +288,7 @@ func (c *Client) GetPod(ctx context.Context, namespace, name string) (*PodDetail
 			CPULimit:   resourceQuantity(ctr.Resources.Limits, corev1.ResourceCPU),
 			MemRequest: resourceQuantity(ctr.Resources.Requests, corev1.ResourceMemory),
 			MemLimit:   resourceQuantity(ctr.Resources.Limits, corev1.ResourceMemory),
-			State:      "Unknown",
+			State:      stateUnknown,
 		}
 		if st, ok := statusByName[ctr.Name]; ok {
 			info.Ready = st.Ready
@@ -336,7 +338,9 @@ func (c *Client) GetPodLogs(ctx context.Context, namespace, pod, container strin
 
 // FollowPodLogs opens a streaming log reader (TailLines then Follow).
 // Caller must Close the reader and cancel ctx to stop the stream.
-func (c *Client) FollowPodLogs(ctx context.Context, namespace, pod, container string, tailLines int) (io.ReadCloser, error) {
+func (c *Client) FollowPodLogs(
+	ctx context.Context, namespace, pod, container string, tailLines int,
+) (io.ReadCloser, error) {
 	opts := PodLogOptions(container, tailLines, true)
 	stream, err := c.cs.CoreV1().Pods(namespace).GetLogs(pod, opts).Stream(ctx)
 	if err != nil {
@@ -438,7 +442,7 @@ func podStatus(p corev1.Pod) string {
 	if p.Status.Phase != "" {
 		return string(p.Status.Phase)
 	}
-	return "Unknown"
+	return stateUnknown
 }
 
 func containerState(st corev1.ContainerStatus) string {
@@ -456,7 +460,7 @@ func containerState(st corev1.ContainerStatus) string {
 		}
 		return "Terminated"
 	default:
-		return "Unknown"
+		return stateUnknown
 	}
 }
 

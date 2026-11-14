@@ -13,18 +13,18 @@ import (
 )
 
 const (
-	keepSessions = 10
-	sessionGlob  = "session-*.log"
+	keepSessions  = 10
+	sessionGlob   = "session-*.log"
 	maxRecentCmds = 20
 )
 
 var (
-	mu     sync.Mutex
-	file   *os.File
-	dirFn  = defaultDir
-	nowFn  = time.Now
-	pidFn  = os.Getpid
-	version = "dev"
+	mu         sync.Mutex
+	file       *os.File
+	dirFn      = defaultDir
+	nowFn      = time.Now
+	pidFn      = os.Getpid
+	version    = "dev"
 	recentCmds []string
 )
 
@@ -94,13 +94,15 @@ func Init() error {
 	}
 
 	dir := dirFn()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return fmt.Errorf("create log dir: %w", err)
 	}
 
 	name := fmt.Sprintf("session-%s.log", nowFn().Format("20060102-150405"))
 	path := filepath.Join(dir, name)
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	// path is derived from the program-controlled log dir and a timestamped name.
+	const flags = os.O_CREATE | os.O_WRONLY | os.O_APPEND
+	f, err := os.OpenFile(path, flags, 0o600) //nolint:gosec // G304: trusted session log path
 	if err != nil {
 		return fmt.Errorf("open session log: %w", err)
 	}
@@ -116,7 +118,7 @@ func Init() error {
 
 	if err := pruneLocked(dir); err != nil {
 		// Non-fatal: session file is usable even if prune fails.
-		_, _ = file.WriteString(fmt.Sprintf("%s prune warning: %v\n", stamp(), err))
+		_, _ = fmt.Fprintf(file, "%s prune warning: %v\n", stamp(), err)
 	}
 	return nil
 }
@@ -219,7 +221,6 @@ func Cmd(name string, args []string, output string, err error) {
 	}
 	_, _ = file.WriteString(b.String())
 }
-
 
 // RecentCmds returns a copy of the recent shell command lines (oldest first).
 func RecentCmds() []string {

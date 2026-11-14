@@ -166,7 +166,9 @@ func TestParseAzVersionJSON(t *testing.T) {
 }
 
 func TestParseAzVersionText(t *testing.T) {
-	maj, min, pat, err := ParseAzVersion("azure-cli                         2.87.1\ncore                              2.87.1\n")
+	const out = "azure-cli                         2.87.1\n" +
+		"core                              2.87.1\n"
+	maj, min, pat, err := ParseAzVersion(out)
 	if err != nil {
 		t.Fatal(err)
 	}

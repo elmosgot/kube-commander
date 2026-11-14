@@ -9,8 +9,15 @@ import (
 )
 
 const (
-	maxCmdLogEntries   = 30
-	cmdAnimInterval    = 450 * time.Millisecond
+	maxCmdLogEntries = 30
+	cmdAnimInterval  = 450 * time.Millisecond
+)
+
+// Command-panel row kinds (used for rendering and click hit-testing).
+const (
+	rowKindTitle = "title"
+	rowKindCmd   = "cmd"
+	rowKindErr   = "err"
 )
 
 type cmdEntry struct {
@@ -151,7 +158,7 @@ type cmdPanelRow struct {
 }
 
 func buildCmdPanelRows(entries []cmdEntry, animFrame int, now time.Time, width int) []cmdPanelRow {
-	rows := []cmdPanelRow{{kind: "title", text: "Commands"}}
+	rows := []cmdPanelRow{{kind: rowKindTitle, text: "Commands"}}
 	inner := width - 4
 	if inner < 12 {
 		inner = 12
@@ -168,7 +175,7 @@ func buildCmdPanelRows(entries []cmdEntry, animFrame int, now time.Time, width i
 			timing = "∞"
 		}
 		rows = append(rows, cmdPanelRow{
-			kind:    "cmd",
+			kind:    rowKindCmd,
 			entryID: e.ID,
 			text:    line,
 			timing:  timing,
@@ -180,7 +187,7 @@ func buildCmdPanelRows(entries []cmdEntry, animFrame int, now time.Time, width i
 			if width > 4 {
 				errText = truncate(errText, width-4)
 			}
-			rows = append(rows, cmdPanelRow{kind: "err", entryID: e.ID, text: errText})
+			rows = append(rows, cmdPanelRow{kind: rowKindErr, entryID: e.ID, text: errText})
 		}
 	}
 	_ = animFrame
