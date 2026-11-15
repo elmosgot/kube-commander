@@ -2,6 +2,7 @@ package ui
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os/exec"
 	"runtime"
@@ -16,13 +17,16 @@ func copyToClipboard(text string) error {
 		return fmt.Errorf("no clipboard tool (clip.exe, wl-copy, or xclip)")
 	}
 	var lastErr error
-	for _, c := range candidates {
-		cmd := exec.Command(c[0], c[1:]...)
+	for _, candidate := range candidates {
+		// Commands come from clipboardCommands(), a fixed allowlist of known tools.
+		cmd := exec.CommandContext( //nolint:gosec // G204: fixed clipboard tool allowlist
+			context.Background(), candidate[0], candidate[1:]...,
+		)
 		cmd.Stdin = strings.NewReader(text)
 		var stderr bytes.Buffer
 		cmd.Stderr = &stderr
 		if err := cmd.Run(); err != nil {
-			lastErr = fmt.Errorf("%s: %w (%s)", c[0], err, strings.TrimSpace(stderr.String()))
+			lastErr = fmt.Errorf("%s: %w (%s)", candidate[0], err, strings.TrimSpace(stderr.String()))
 			continue
 		}
 		return nil

@@ -7,8 +7,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 
-func TestPodResourcesSumsContainers(t *testing.T) {
-	p := corev1.Pod{
+func TestPodResourcesSumsContainers(test *testing.T) {
+	pod := corev1.Pod{
 		Spec: corev1.PodSpec{
 			Containers: []corev1.Container{
 				{
@@ -51,26 +51,26 @@ func TestPodResourcesSumsContainers(t *testing.T) {
 			},
 		},
 	}
-	cpuReq, cpuLim, memReq, memLim := PodResources(p)
+	cpuReq, cpuLim, memReq, memLim := PodResources(pod)
 	if cpuReq != "150m" {
-		t.Fatalf("cpuReq = %q", cpuReq)
+		test.Fatalf("cpuReq = %q", cpuReq)
 	}
 	if cpuLim != "300m" {
-		t.Fatalf("cpuLim = %q", cpuLim)
+		test.Fatalf("cpuLim = %q", cpuLim)
 	}
 	if memReq != "192Mi" {
-		t.Fatalf("memReq = %q", memReq)
+		test.Fatalf("memReq = %q", memReq)
 	}
 	if memLim != "384Mi" {
-		t.Fatalf("memLim = %q", memLim)
+		test.Fatalf("memLim = %q", memLim)
 	}
 }
 
-func TestPodResourcesEmpty(t *testing.T) {
+func TestPodResourcesEmpty(test *testing.T) {
 	cpuReq, cpuLim, memReq, memLim := PodResources(corev1.Pod{
 		Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "x"}}},
 	})
 	if cpuReq != "-" || cpuLim != "-" || memReq != "-" || memLim != "-" {
-		t.Fatalf("got %s %s %s %s", cpuReq, cpuLim, memReq, memLim)
+		test.Fatalf("got %s %s %s %s", cpuReq, cpuLim, memReq, memLim)
 	}
 }

@@ -22,6 +22,8 @@ const (
 	defaultTimeout = 8 * time.Second
 	logsTimeout    = 15 * time.Second
 	defaultTail    = 200
+
+	stateUnknown = "Unknown"
 )
 
 // NamespaceInfo is a summarized namespace row for the right pane.
@@ -58,15 +60,15 @@ type PodInfo struct {
 
 // ContainerInfo is one container in a pod detail view.
 type ContainerInfo struct {
-	Name         string
-	Image        string
-	Ready        bool
-	Restarts     int32
-	State        string
-	CPURequest   string
-	CPULimit     string
-	MemRequest   string
-	MemLimit     string
+	Name       string
+	Image      string
+	Ready      bool
+	Restarts   int32
+	State      string
+	CPURequest string
+	CPULimit   string
+	MemRequest string
+	MemLimit   string
 }
 
 // PodDetail is the full read-only pod detail.
@@ -138,21 +140,21 @@ func ContextExists(env config.Environment) bool {
 }
 
 // ListNamespaces returns namespace summaries with deployment and pod counts.
-func (c *Client) ListNamespaces(ctx context.Context) ([]NamespaceInfo, error) {
+func (client *Client) ListNamespaces(ctx context.Context) ([]NamespaceInfo, error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	nsList, err := c.cs.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
+	nsList, err := client.cs.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("list namespaces: %w", err)
 	}
 
-	depList, err := c.cs.AppsV1().Deployments("").List(ctx, metav1.ListOptions{})
+	depList, err := client.cs.AppsV1().Deployments("").List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("list deployments: %w", err)
 	}
 
-	podList, err := c.cs.CoreV1().Pods("").List(ctx, metav1.ListOptions{})
+	podList, err := client.cs.CoreV1().Pods("").List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("list pods: %w", err)
 	}
@@ -184,40 +186,40 @@ func (c *Client) ListNamespaces(ctx context.Context) ([]NamespaceInfo, error) {
 }
 
 // ListWorkloads returns deployments in a namespace.
-func (c *Client) ListWorkloads(ctx context.Context, namespace string) ([]WorkloadInfo, error) {
+func (client *Client) ListWorkloads(ctx context.Context, namespace string) ([]WorkloadInfo, error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	depList, err := c.cs.AppsV1().Deployments(namespace).List(ctx, metav1.ListOptions{})
+	depList, err := client.cs.AppsV1().Deployments(namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("list deployments in %q: %w", namespace, err)
 	}
 
 	now := time.Now()
 	out := make([]WorkloadInfo, 0, len(depList.Items))
-	for _, d := range depList.Items {
+	for _, dep := range depList.Items {
 		desired := int32(0)
-		if d.Spec.Replicas != nil {
-			desired = *d.Spec.Replicas
+		if dep.Spec.Replicas != nil {
+			desired = *dep.Spec.Replicas
 		}
 		out = append(out, WorkloadInfo{
-			Name:      d.Name,
-			Ready:     d.Status.ReadyReplicas,
+			Name:      dep.Name,
+			Ready:     dep.Status.ReadyReplicas,
 			Desired:   desired,
-			Available: d.Status.AvailableReplicas,
-			Updated:   d.Status.UpdatedReplicas,
-			Age:       formatAge(now.Sub(d.CreationTimestamp.Time)),
+			Available: dep.Status.AvailableReplicas,
+			Updated:   dep.Status.UpdatedReplicas,
+			Age:       formatAge(now.Sub(dep.CreationTimestamp.Time)),
 		})
 	}
 	return out, nil
 }
 
 // ListPods returns pods for a deployment in a namespace (via the deployment selector).
-func (c *Client) ListPods(ctx context.Context, namespace, deploymentName string) ([]PodInfo, error) {
+func (client *Client) ListPods(ctx context.Context, namespace, deploymentName string) ([]PodInfo, error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	dep, err := c.cs.AppsV1().Deployments(namespace).Get(ctx, deploymentName, metav1.GetOptions{})
+	dep, err := client.cs.AppsV1().Deployments(namespace).Get(ctx, deploymentName, metav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("get deployment %q: %w", deploymentName, err)
 	}
@@ -226,7 +228,7 @@ func (c *Client) ListPods(ctx context.Context, namespace, deploymentName string)
 		return nil, fmt.Errorf("deployment selector: %w", err)
 	}
 
-	podList, err := c.cs.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+	podList, err := client.cs.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: selector.String(),
 	})
 	if err != nil {
@@ -235,16 +237,16 @@ func (c *Client) ListPods(ctx context.Context, namespace, deploymentName string)
 
 	now := time.Now()
 	out := make([]PodInfo, 0, len(podList.Items))
-	for _, p := range podList.Items {
-		ready, total := podReadyCounts(p)
-		cpuReq, cpuLim, memReq, memLim := PodResources(p)
+	for _, pod := range podList.Items {
+		ready, total := podReadyCounts(pod)
+		cpuReq, cpuLim, memReq, memLim := PodResources(pod)
 		out = append(out, PodInfo{
-			Name:       p.Name,
+			Name:       pod.Name,
 			Ready:      fmt.Sprintf("%d/%d", ready, total),
-			Restarts:   podRestarts(p),
-			Status:     podStatus(p),
-			Node:       p.Spec.NodeName,
-			Age:        formatAge(now.Sub(p.CreationTimestamp.Time)),
+			Restarts:   podRestarts(pod),
+			Status:     podStatus(pod),
+			Node:       pod.Spec.NodeName,
+			Age:        formatAge(now.Sub(pod.CreationTimestamp.Time)),
 			CPURequest: cpuReq,
 			CPULimit:   cpuLim,
 			MemRequest: memReq,
@@ -255,30 +257,30 @@ func (c *Client) ListPods(ctx context.Context, namespace, deploymentName string)
 }
 
 // GetPod returns a detailed pod view.
-func (c *Client) GetPod(ctx context.Context, namespace, name string) (*PodDetail, error) {
+func (client *Client) GetPod(ctx context.Context, namespace, name string) (*PodDetail, error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	p, err := c.cs.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})
+	pod, err := client.cs.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("get pod %q: %w", name, err)
 	}
 
 	now := time.Now()
-	ready, total := podReadyCounts(*p)
+	ready, total := podReadyCounts(*pod)
 	statusByName := map[string]corev1.ContainerStatus{}
-	for _, st := range p.Status.ContainerStatuses {
+	for _, st := range pod.Status.ContainerStatuses {
 		statusByName[st.Name] = st
 	}
 	// Include init containers' statuses when present for restart counts on matching names.
-	for _, st := range p.Status.InitContainerStatuses {
+	for _, st := range pod.Status.InitContainerStatuses {
 		if _, ok := statusByName[st.Name]; !ok {
 			statusByName[st.Name] = st
 		}
 	}
 
-	containers := make([]ContainerInfo, 0, len(p.Spec.Containers))
-	for _, ctr := range p.Spec.Containers {
+	containers := make([]ContainerInfo, 0, len(pod.Spec.Containers))
+	for _, ctr := range pod.Spec.Containers {
 		info := ContainerInfo{
 			Name:       ctr.Name,
 			Image:      ctr.Image,
@@ -286,7 +288,7 @@ func (c *Client) GetPod(ctx context.Context, namespace, name string) (*PodDetail
 			CPULimit:   resourceQuantity(ctr.Resources.Limits, corev1.ResourceCPU),
 			MemRequest: resourceQuantity(ctr.Resources.Requests, corev1.ResourceMemory),
 			MemLimit:   resourceQuantity(ctr.Resources.Limits, corev1.ResourceMemory),
-			State:      "Unknown",
+			State:      stateUnknown,
 		}
 		if st, ok := statusByName[ctr.Name]; ok {
 			info.Ready = st.Ready
@@ -297,12 +299,12 @@ func (c *Client) GetPod(ctx context.Context, namespace, name string) (*PodDetail
 	}
 
 	return &PodDetail{
-		Name:       p.Name,
-		Namespace:  p.Namespace,
-		Phase:      string(p.Status.Phase),
-		Node:       p.Spec.NodeName,
-		PodIP:      p.Status.PodIP,
-		Age:        formatAge(now.Sub(p.CreationTimestamp.Time)),
+		Name:       pod.Name,
+		Namespace:  pod.Namespace,
+		Phase:      string(pod.Status.Phase),
+		Node:       pod.Spec.NodeName,
+		PodIP:      pod.Status.PodIP,
+		Age:        formatAge(now.Sub(pod.CreationTimestamp.Time)),
 		Ready:      fmt.Sprintf("%d/%d", ready, total),
 		Containers: containers,
 	}, nil
@@ -322,12 +324,12 @@ func PodLogOptions(container string, tailLines int, follow bool) *corev1.PodLogO
 }
 
 // GetPodLogs returns the last tailLines of logs for a container (default 200).
-func (c *Client) GetPodLogs(ctx context.Context, namespace, pod, container string, tailLines int) (string, error) {
+func (client *Client) GetPodLogs(ctx context.Context, namespace, pod, container string, tailLines int) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, logsTimeout)
 	defer cancel()
 
 	opts := PodLogOptions(container, tailLines, false)
-	raw, err := c.cs.CoreV1().Pods(namespace).GetLogs(pod, opts).DoRaw(ctx)
+	raw, err := client.cs.CoreV1().Pods(namespace).GetLogs(pod, opts).DoRaw(ctx)
 	if err != nil {
 		return "", fmt.Errorf("logs for %s/%s: %w", pod, container, err)
 	}
@@ -336,9 +338,11 @@ func (c *Client) GetPodLogs(ctx context.Context, namespace, pod, container strin
 
 // FollowPodLogs opens a streaming log reader (TailLines then Follow).
 // Caller must Close the reader and cancel ctx to stop the stream.
-func (c *Client) FollowPodLogs(ctx context.Context, namespace, pod, container string, tailLines int) (io.ReadCloser, error) {
+func (client *Client) FollowPodLogs(
+	ctx context.Context, namespace, pod, container string, tailLines int,
+) (io.ReadCloser, error) {
 	opts := PodLogOptions(container, tailLines, true)
-	stream, err := c.cs.CoreV1().Pods(namespace).GetLogs(pod, opts).Stream(ctx)
+	stream, err := client.cs.CoreV1().Pods(namespace).GetLogs(pod, opts).Stream(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("follow logs for %s/%s: %w", pod, container, err)
 	}
@@ -426,8 +430,8 @@ func podRestarts(p corev1.Pod) int32 {
 	return n
 }
 
-func podStatus(p corev1.Pod) string {
-	for _, st := range p.Status.ContainerStatuses {
+func podStatus(pod corev1.Pod) string {
+	for _, st := range pod.Status.ContainerStatuses {
 		if st.State.Waiting != nil && st.State.Waiting.Reason != "" {
 			return st.State.Waiting.Reason
 		}
@@ -435,28 +439,28 @@ func podStatus(p corev1.Pod) string {
 			return st.State.Terminated.Reason
 		}
 	}
-	if p.Status.Phase != "" {
-		return string(p.Status.Phase)
+	if pod.Status.Phase != "" {
+		return string(pod.Status.Phase)
 	}
-	return "Unknown"
+	return stateUnknown
 }
 
-func containerState(st corev1.ContainerStatus) string {
+func containerState(status corev1.ContainerStatus) string {
 	switch {
-	case st.State.Running != nil:
+	case status.State.Running != nil:
 		return "Running"
-	case st.State.Waiting != nil:
-		if st.State.Waiting.Reason != "" {
-			return st.State.Waiting.Reason
+	case status.State.Waiting != nil:
+		if status.State.Waiting.Reason != "" {
+			return status.State.Waiting.Reason
 		}
 		return "Waiting"
-	case st.State.Terminated != nil:
-		if st.State.Terminated.Reason != "" {
-			return st.State.Terminated.Reason
+	case status.State.Terminated != nil:
+		if status.State.Terminated.Reason != "" {
+			return status.State.Terminated.Reason
 		}
 		return "Terminated"
 	default:
-		return "Unknown"
+		return stateUnknown
 	}
 }
 
@@ -472,17 +476,17 @@ func isPodReady(p corev1.Pod) bool {
 	return false
 }
 
-func formatAge(d time.Duration) string {
-	if d < time.Minute {
-		return fmt.Sprintf("%ds", int(d.Seconds()))
+func formatAge(dur time.Duration) string {
+	if dur < time.Minute {
+		return fmt.Sprintf("%ds", int(dur.Seconds()))
 	}
-	if d < time.Hour {
-		return fmt.Sprintf("%dm", int(d.Minutes()))
+	if dur < time.Hour {
+		return fmt.Sprintf("%dm", int(dur.Minutes()))
 	}
-	if d < 24*time.Hour {
-		return fmt.Sprintf("%dh", int(d.Hours()))
+	if dur < 24*time.Hour {
+		return fmt.Sprintf("%dh", int(dur.Hours()))
 	}
-	return fmt.Sprintf("%dd", int(d.Hours()/24))
+	return fmt.Sprintf("%dd", int(dur.Hours()/24))
 }
 
 // ClearClientCache drops cached clients (useful in tests).

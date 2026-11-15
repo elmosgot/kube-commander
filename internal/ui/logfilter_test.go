@@ -7,223 +7,223 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-func TestLogFilterActivateAndMatch(t *testing.T) {
-	m := New(testConfig(), "test.yaml")
-	m.width = 100
-	m.height = 30
-	m.leftCursor = 1
-	m.focus = paneRight
-	m.rightView = viewPodLogs
-	m.logText = "alpha line\nbeta error\ngamma line\n"
+func TestLogFilterActivateAndMatch(test *testing.T) {
+	model := New(testConfig(), "test.yaml")
+	model.width = 100
+	model.height = 30
+	model.leftCursor = 1
+	model.focus = paneRight
+	model.rightView = viewPodLogs
+	model.logText = "alpha line\nbeta error\ngamma line\n"
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
-	m = updated.(Model)
-	if !m.logFilterActive {
-		t.Fatal("expected filter active after f")
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	model = updated.(Model)
+	if !model.logFilterActive {
+		test.Fatal("expected filter active after f")
 	}
 
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e', 'r', 'r'}})
-	m = updated.(Model)
-	if m.logFilter != "err" {
-		t.Fatalf("filter = %q", m.logFilter)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e', 'r', 'r'}})
+	model = updated.(Model)
+	if model.logFilter != tErr {
+		test.Fatalf("filter = %q", model.logFilter)
 	}
-	lines := m.filteredLogLines()
+	lines := model.filteredLogLines()
 	if len(lines) != 1 || !strings.Contains(lines[0], "error") {
-		t.Fatalf("filtered = %v", lines)
+		test.Fatalf("filtered = %v", lines)
 	}
-	if m.rightLen() != 1 {
-		t.Fatalf("rightLen = %d", m.rightLen())
-	}
-}
-
-func TestLogFilterSlashAndEsc(t *testing.T) {
-	m := New(testConfig(), "test.yaml")
-	m.focus = paneRight
-	m.rightView = viewPodLogs
-	m.logText = "one\ntwo\n"
-
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
-	m = updated.(Model)
-	if !m.logFilterActive {
-		t.Fatal("expected filter active after /")
-	}
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
-	m = updated.(Model)
-	if len(m.filteredLogLines()) != 1 {
-		t.Fatalf("lines = %v", m.filteredLogLines())
-	}
-
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEscape})
-	m = updated.(Model)
-	if m.logFilterActive || m.logFilter != "" {
-		t.Fatalf("filter should clear: active=%v filter=%q", m.logFilterActive, m.logFilter)
-	}
-	if m.rightView != viewPodLogs {
-		t.Fatal("esc should stay on logs")
+	if model.rightLen() != 1 {
+		test.Fatalf("rightLen = %d", model.rightLen())
 	}
 }
 
-func TestLogFilterBackspaceEditsQuery(t *testing.T) {
-	m := New(testConfig(), "test.yaml")
-	m.focus = paneRight
-	m.rightView = viewPodLogs
-	m.logFilterActive = true
-	m.logFilter = "ab"
-	m.logText = "ab\nac\n"
+func TestLogFilterSlashAndEsc(test *testing.T) {
+	model := New(testConfig(), "test.yaml")
+	model.focus = paneRight
+	model.rightView = viewPodLogs
+	model.logText = "one\ntwo\n"
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyBackspace})
-	m = updated.(Model)
-	if m.logFilter != "a" {
-		t.Fatalf("filter = %q", m.logFilter)
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	model = updated.(Model)
+	if !model.logFilterActive {
+		test.Fatal("expected filter active after /")
 	}
-	if m.rightView != viewPodLogs {
-		t.Fatal("backspace should not leave logs while filtering")
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+	model = updated.(Model)
+	if len(model.filteredLogLines()) != 1 {
+		test.Fatalf("lines = %v", model.filteredLogLines())
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	model = updated.(Model)
+	if model.logFilterActive || model.logFilter != "" {
+		test.Fatalf("filter should clear: active=%v filter=%q", model.logFilterActive, model.logFilter)
+	}
+	if model.rightView != viewPodLogs {
+		test.Fatal("esc should stay on logs")
 	}
 }
 
-func TestLogFilterCapturesGlobalHotkeys(t *testing.T) {
-	m := New(testConfig(), "test.yaml")
-	m.width = 100
-	m.height = 30
-	m.focus = paneRight
-	m.rightView = viewPodLogs
-	m.logFilterActive = true
-	m.logFilter = "do"
-	m.logText = "doctrine\nother\n"
-	m.showCmds = false
+func TestLogFilterBackspaceEditsQuery(test *testing.T) {
+	model := New(testConfig(), "test.yaml")
+	model.focus = paneRight
+	model.rightView = viewPodLogs
+	model.logFilterActive = true
+	model.logFilter = "ab"
+	model.logText = "ab\nac\n"
 
-	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
-	m = updated.(Model)
-	if m.logFilter != "doc" {
-		t.Fatalf("filter = %q want doc", m.logFilter)
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	model = updated.(Model)
+	if model.logFilter != "a" {
+		test.Fatalf("filter = %q", model.logFilter)
 	}
-	if m.showCmds {
-		t.Fatal("c must not toggle commands while filtering")
+	if model.rightView != viewPodLogs {
+		test.Fatal("backspace should not leave logs while filtering")
+	}
+}
+
+func TestLogFilterCapturesGlobalHotkeys(test *testing.T) {
+	model := New(testConfig(), "test.yaml")
+	model.width = 100
+	model.height = 30
+	model.focus = paneRight
+	model.rightView = viewPodLogs
+	model.logFilterActive = true
+	model.logFilter = "do"
+	model.logText = "doctrine\nother\n"
+	model.showCmds = false
+
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+	model = updated.(Model)
+	if model.logFilter != "doc" {
+		test.Fatalf("filter = %q want doc", model.logFilter)
+	}
+	if model.showCmds {
+		test.Fatal("c must not toggle commands while filtering")
 	}
 	if cmd != nil {
-		t.Fatal("r/c must not trigger refresh/other cmds while filtering")
+		test.Fatal("r/c must not trigger refresh/other cmds while filtering")
 	}
 
-	updated, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
-	m = updated.(Model)
-	if m.logFilter != "docr" {
-		t.Fatalf("filter = %q want docr", m.logFilter)
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	model = updated.(Model)
+	if model.logFilter != "docr" {
+		test.Fatalf("filter = %q want docr", model.logFilter)
 	}
 	if cmd != nil {
-		t.Fatal("r must not refresh while filtering")
+		test.Fatal("r must not refresh while filtering")
 	}
 }
 
-func TestLogFilterHelpOnBottom(t *testing.T) {
-	m := New(testConfig(), "test.yaml")
-	m.width = 100
-	m.height = 30
-	m.focus = paneRight
-	m.rightView = viewPodLogs
-	m.logFilterActive = true
-	m.logFilter = "foo"
-	m.logText = "foo\nbar\n"
+func TestLogFilterHelpOnBottom(test *testing.T) {
+	model := New(testConfig(), "test.yaml")
+	model.width = 100
+	model.height = 30
+	model.focus = paneRight
+	model.rightView = viewPodLogs
+	model.logFilterActive = true
+	model.logFilter = "foo"
+	model.logText = "foo\nbar\n"
 
-	view := m.View()
+	view := model.View()
 	if !strings.Contains(view, "Filter: foo") {
-		t.Fatalf("missing bottom filter prompt:\n%s", view)
+		test.Fatalf("missing bottom filter prompt:\n%s", view)
 	}
 	// Filter prompt should not appear as a logs-pane header line only — help line carries it.
-	help := m.renderHelp()
+	help := model.renderHelp()
 	if !strings.Contains(help, "Filter: foo█") {
-		t.Fatalf("help = %q", help)
+		test.Fatalf("help = %q", help)
 	}
 	if !strings.Contains(help, "! exclude") {
-		t.Fatalf("help missing exclude hint: %q", help)
+		test.Fatalf("help missing exclude hint: %q", help)
 	}
 	if !strings.Contains(help, "| or") {
-		t.Fatalf("help missing OR hint: %q", help)
+		test.Fatalf("help missing OR hint: %q", help)
 	}
 }
 
-func TestLogFilterExcludePrefix(t *testing.T) {
-	m := New(testConfig(), "test.yaml")
-	m.logFilterActive = true
-	m.logText = "GET /ready\nPOST /orders\nGET /readyz\nERROR boom"
+func TestLogFilterExcludePrefix(test *testing.T) {
+	model := New(testConfig(), "test.yaml")
+	model.logFilterActive = true
+	model.logText = "GET /ready\nPOST /orders\nGET /readyz\nERROR boom"
 
-	m.logFilter = "err"
-	lines := m.filteredLogLines()
+	model.logFilter = tErr
+	lines := model.filteredLogLines()
 	if len(lines) != 1 || !strings.Contains(lines[0], "ERROR") {
-		t.Fatalf("positive filter = %v", lines)
+		test.Fatalf("positive filter = %v", lines)
 	}
 
-	m.logFilter = "!ready"
-	lines = m.filteredLogLines()
+	model.logFilter = "!ready"
+	lines = model.filteredLogLines()
 	if len(lines) != 2 {
-		t.Fatalf("exclude ready: got %v", lines)
+		test.Fatalf("exclude ready: got %v", lines)
 	}
 	for _, line := range lines {
 		if strings.Contains(strings.ToLower(line), "ready") {
-			t.Fatalf("exclude leaked ready line: %q", line)
+			test.Fatalf("exclude leaked ready line: %q", line)
 		}
 	}
 
-	m.logFilter = "!"
-	lines = m.filteredLogLines()
+	model.logFilter = "!"
+	lines = model.filteredLogLines()
 	if len(lines) != 4 {
-		t.Fatalf("bare ! should show all, got %v", lines)
+		test.Fatalf("bare ! should show all, got %v", lines)
 	}
 }
 
-func TestLogFilterIgnoresControlRunes(t *testing.T) {
-	m := New(testConfig(), "test.yaml")
-	m.focus = paneRight
-	m.rightView = viewPodLogs
-	m.logFilterActive = true
-	m.logFilter = "err"
-	m.logText = "error\nready\n"
+func TestLogFilterIgnoresControlRunes(test *testing.T) {
+	model := New(testConfig(), "test.yaml")
+	model.focus = paneRight
+	model.rightView = viewPodLogs
+	model.logFilterActive = true
+	model.logFilter = tErr
+	model.logText = "error\nready\n"
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{0x1b}}) // ESC from Alt
-	m = updated.(Model)
-	if m.logFilter != "err" {
-		t.Fatalf("control rune altered filter: %q", m.logFilter)
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{0x1b}}) // ESC from Alt
+	model = updated.(Model)
+	if model.logFilter != tErr {
+		test.Fatalf("control rune altered filter: %q", model.logFilter)
 	}
 
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{0x1b, '|'}})
-	m = updated.(Model)
-	if m.logFilter != "err|" {
-		t.Fatalf("expected printable | only, got %q", m.logFilter)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{0x1b, '|'}})
+	model = updated.(Model)
+	if model.logFilter != "err|" {
+		test.Fatalf("expected printable | only, got %q", model.logFilter)
 	}
 }
 
-func TestLogFilterOR(t *testing.T) {
-	m := New(testConfig(), "test.yaml")
-	m.logFilterActive = true
-	m.logText = "GET /ready\nPOST /orders\nWARN slow\nERROR boom"
+func TestLogFilterOR(test *testing.T) {
+	model := New(testConfig(), "test.yaml")
+	model.logFilterActive = true
+	model.logText = "GET /ready\nPOST /orders\nWARN slow\nERROR boom"
 
-	m.logFilter = "error|warn"
-	lines := m.filteredLogLines()
+	model.logFilter = "error|warn"
+	lines := model.filteredLogLines()
 	if len(lines) != 2 {
-		t.Fatalf("OR filter = %v", lines)
+		test.Fatalf("OR filter = %v", lines)
 	}
 
-	m.logFilter = "error|"
-	lines = m.filteredLogLines()
+	model.logFilter = "error|"
+	lines = model.filteredLogLines()
 	if len(lines) != 1 || !strings.Contains(lines[0], "ERROR") {
-		t.Fatalf("trailing pipe = %v", lines)
+		test.Fatalf("trailing pipe = %v", lines)
 	}
 
-	m.logFilter = "|"
-	lines = m.filteredLogLines()
+	model.logFilter = "|"
+	lines = model.filteredLogLines()
 	if len(lines) != 4 {
-		t.Fatalf("bare | should show all, got %v", lines)
+		test.Fatalf("bare | should show all, got %v", lines)
 	}
 
-	m.logFilter = "!ready|warn"
-	lines = m.filteredLogLines()
+	model.logFilter = "!ready|warn"
+	lines = model.filteredLogLines()
 	// exclude if line matches ready OR warn → keep POST and ERROR
 	if len(lines) != 2 {
-		t.Fatalf("exclude OR = %v", lines)
+		test.Fatalf("exclude OR = %v", lines)
 	}
 	for _, line := range lines {
 		lower := strings.ToLower(line)
 		if strings.Contains(lower, "ready") || strings.Contains(lower, "warn") {
-			t.Fatalf("exclude OR leaked: %q", line)
+			test.Fatalf("exclude OR leaked: %q", line)
 		}
 	}
 }

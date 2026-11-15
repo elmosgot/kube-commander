@@ -1,0 +1,82 @@
+version: "2"
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+
+linters:
+  default: none
+  enable:
+    - bodyclose
+    - contextcheck
+    - dupl
+    - errcheck
+    - errorlint
+    - funlen
+    - gocognit
+    - goconst
+    - gocritic
+    - gocyclo
+    - gosec
+    - govet
+    - ineffassign
+    - lll
+    - makezero
+    - misspell
+    - nestif
+    - nilerr
+    - noctx
+    - prealloc
+    - revive
+    - staticcheck
+    - unconvert
+    - unused
+    - varnamelen
+  settings:
+    funlen:
+      lines: 100
+      statements: 50
+    gocyclo:
+      min-complexity: 25
+    gocognit:
+      min-complexity: 30
+    goconst:
+      min-len: 3
+      min-occurrences: 3
+    nestif:
+      min-complexity: 4
+    dupl:
+      threshold: 150
+    lll:
+      line-length: 120
+    varnamelen:
+      min-name-length: 3
+      max-distance: 5
+      check-receiver: true
+      ignore-type-assert-ok: true
+      ignore-map-index-ok: true
+      ignore-chan-recv-ok: true
+      ignore-names:
+        - err
+        - ok
+        - i
+        - j
+        - k
+      ignore-decls:
+        - i int
+        - j int
+        - k int
+    revive:
+      rules:
+        - name: file-length-limit
+          severity: warning
+          disabled: false
+          arguments:
+            - max: 500
+              skipComments: true
+              skipBlankLines: true
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

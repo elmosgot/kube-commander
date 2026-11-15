@@ -15,15 +15,15 @@ func expandLogEscapes(s string) string {
 	return strings.NewReplacer(`\n`, "\n", `\t`, "\t", `\r`, "\r").Replace(s)
 }
 
-// wrapLogLine wraps s to at most width runes per row (width < 1 treated as 1).
-func wrapLogLine(s string, width int) []string {
+// wrapLogLine wraps line to at most width runes per row (width < 1 treated as 1).
+func wrapLogLine(line string, width int) []string {
 	if width < 1 {
 		width = 1
 	}
-	if s == "" {
+	if line == "" {
 		return []string{""}
 	}
-	runes := []rune(s)
+	runes := []rune(line)
 	out := make([]string, 0, (len(runes)+width-1)/width)
 	for len(runes) > 0 {
 		n := width

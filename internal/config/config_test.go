@@ -6,65 +6,67 @@ import (
 	"testing"
 )
 
-func TestLoadExample(t *testing.T) {
+const envDevelop = "develop"
+
+func TestLoadExample(test *testing.T) {
 	path := filepath.Join("..", "..", "configs", "example.yaml")
 	cfg, resolved, err := Load(path, "")
 	if err != nil {
-		t.Fatalf("Load: %v", err)
+		test.Fatalf("Load: %v", err)
 	}
 	if resolved != path {
-		t.Fatalf("resolved = %q, want %q", resolved, path)
+		test.Fatalf("resolved = %q, want %q", resolved, path)
 	}
 	if len(cfg.Pools) != 2 {
-		t.Fatalf("pools = %d, want 2", len(cfg.Pools))
+		test.Fatalf("pools = %d, want 2", len(cfg.Pools))
 	}
 	if cfg.Pools[0].Name != "pool-x" {
-		t.Fatalf("first pool = %q, want pool-x", cfg.Pools[0].Name)
+		test.Fatalf("first pool = %q, want pool-x", cfg.Pools[0].Name)
 	}
 	if len(cfg.Pools[0].Environments) != 4 {
-		t.Fatalf("pool-x environments = %d, want 4", len(cfg.Pools[0].Environments))
+		test.Fatalf("pool-x environments = %d, want 4", len(cfg.Pools[0].Environments))
 	}
 	env := cfg.Pools[0].Environments[0]
 	if env.Context != "pool-x-dev" {
-		t.Fatalf("context = %q", env.Context)
+		test.Fatalf("context = %q", env.Context)
 	}
 	if env.Namespace != "app" {
-		t.Fatalf("namespace = %q", env.Namespace)
+		test.Fatalf("namespace = %q", env.Namespace)
 	}
 	if env.Azure == nil || env.Azure.Cluster != "aks-pool-x-dev" {
-		t.Fatalf("azure = %+v", env.Azure)
+		test.Fatalf("azure = %+v", env.Azure)
 	}
 	if cfg.Pools[1].Name != "pool-y" {
-		t.Fatalf("second pool = %q, want pool-y", cfg.Pools[1].Name)
+		test.Fatalf("second pool = %q, want pool-y", cfg.Pools[1].Name)
 	}
 }
 
-func TestValidateRejectsEmpty(t *testing.T) {
+func TestValidateRejectsEmpty(test *testing.T) {
 	cfg := &Config{}
 	if err := cfg.Validate(); err == nil {
-		t.Fatal("expected error for empty config")
+		test.Fatal("expected error for empty config")
 	}
 }
 
-func TestValidateRejectsDuplicatePool(t *testing.T) {
+func TestValidateRejectsDuplicatePool(test *testing.T) {
 	cfg := &Config{
 		Pools: []Pool{
-			{Name: "a", Environments: []Environment{{Name: "develop", Context: "a-dev"}}},
-			{Name: "a", Environments: []Environment{{Name: "develop", Context: "b-dev"}}},
+			{Name: "a", Environments: []Environment{{Name: envDevelop, Context: "a-dev"}}},
+			{Name: "a", Environments: []Environment{{Name: envDevelop, Context: "b-dev"}}},
 		},
 	}
 	if err := cfg.Validate(); err == nil {
-		t.Fatal("expected duplicate pool error")
+		test.Fatal("expected duplicate pool error")
 	}
 }
 
-func TestValidateRejectsIncompleteAzure(t *testing.T) {
+func TestValidateRejectsIncompleteAzure(test *testing.T) {
 	cfg := &Config{
 		Pools: []Pool{
 			{
 				Name: "a",
 				Environments: []Environment{{
-					Name:    "develop",
+					Name:    envDevelop,
 					Context: "a-dev",
 					Azure:   &AzureConfig{Subscription: "sub-only"},
 				}},
@@ -72,48 +74,48 @@ func TestValidateRejectsIncompleteAzure(t *testing.T) {
 		},
 	}
 	if err := cfg.Validate(); err == nil {
-		t.Fatal("expected azure validation error")
+		test.Fatal("expected azure validation error")
 	}
 }
 
-func TestLoadFallsBackToExample(t *testing.T) {
-	dir := t.TempDir()
+func TestLoadFallsBackToExample(test *testing.T) {
+	dir := test.TempDir()
 	example := filepath.Join(dir, "example.yaml")
 	content := []byte("pools:\n  - name: demo\n    environments:\n      - name: develop\n        context: demo-dev\n")
-	if err := os.WriteFile(example, content, 0o644); err != nil {
-		t.Fatal(err)
+	if err := os.WriteFile(example, content, 0o600); err != nil {
+		test.Fatal(err)
 	}
 
 	missing := filepath.Join(dir, "missing.yaml")
 	_, _, err := Load(missing, example)
 	if err == nil {
-		t.Fatal("expected error when explicit path is missing")
+		test.Fatal("expected error when explicit path is missing")
 	}
 }
 
-func TestExpandHome(t *testing.T) {
+func TestExpandHome(test *testing.T) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		t.Fatal(err)
+		test.Fatal(err)
 	}
 	got := expandHome("~/kube/config")
 	want := filepath.Join(home, "kube/config")
 	if got != want {
-		t.Fatalf("expandHome = %q, want %q", got, want)
+		test.Fatalf("expandHome = %q, want %q", got, want)
 	}
 }
 
-func TestResolveKubeconfigDefault(t *testing.T) {
+func TestResolveKubeconfigDefault(test *testing.T) {
 	got := ResolveKubeconfig(Environment{Context: "x"})
 	want := DefaultKubeconfigPath()
 	if got != want {
-		t.Fatalf("ResolveKubeconfig = %q, want %q", got, want)
+		test.Fatalf("ResolveKubeconfig = %q, want %q", got, want)
 	}
 }
 
-func TestResolveKubeconfigExplicit(t *testing.T) {
+func TestResolveKubeconfigExplicit(test *testing.T) {
 	got := ResolveKubeconfig(Environment{Context: "x", Kubeconfig: "/tmp/custom.kubeconfig"})
 	if got != "/tmp/custom.kubeconfig" {
-		t.Fatalf("ResolveKubeconfig = %q", got)
+		test.Fatalf("ResolveKubeconfig = %q", got)
 	}
 }

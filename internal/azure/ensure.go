@@ -2,6 +2,7 @@ package azure
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -95,8 +96,14 @@ func PrepareLoginCmd(subscription string) *exec.Cmd {
 	supportsLoginSub := DetectLoginSubscriptionSupport()
 	args := LoginArgs(subscription, supportsLoginSub)
 	azBin := ResolveAzBinary()
-	applog.Infof("starting interactive: %s %s (AZURE_CORE_LOGIN_EXPERIENCE_V2=off AZURE_CORE_OUTPUT=none)", azBin, strings.Join(args, " "))
-	cmd := exec.Command(azBin, args...)
+	applog.Infof(
+		"starting interactive: %s %s (AZURE_CORE_LOGIN_EXPERIENCE_V2=off AZURE_CORE_OUTPUT=none)",
+		azBin, strings.Join(args, " "),
+	)
+	// azBin resolves to a fixed path ("/usr/bin/az" or "az"); args come from trusted config.
+	cmd := exec.CommandContext( //nolint:gosec // G204: fixed az binary, args from config
+		context.Background(), azBin, args...,
+	)
 	cmd.Env = append(os.Environ(),
 		EnvLoginExperienceV2+"=off",
 		EnvCoreOutput+"=none",
@@ -153,13 +160,13 @@ func ParseAzVersion(output string) (major, minor, patch int, err error) {
 }
 
 func parseSemver(s string) (major, minor, patch int, err error) {
-	m := semverRe.FindStringSubmatch(s)
-	if m == nil {
+	matches := semverRe.FindStringSubmatch(s)
+	if matches == nil {
 		return 0, 0, 0, fmt.Errorf("no semver in %q", s)
 	}
-	major, _ = strconv.Atoi(m[1])
-	minor, _ = strconv.Atoi(m[2])
-	patch, _ = strconv.Atoi(m[3])
+	major, _ = strconv.Atoi(matches[1])
+	minor, _ = strconv.Atoi(matches[2])
+	patch, _ = strconv.Atoi(matches[3])
 	return major, minor, patch, nil
 }
 
@@ -169,11 +176,18 @@ func DetectLoginSubscriptionSupport() bool {
 	azVersionOnce.Do(func() {
 		azBin := ResolveAzBinary()
 		args := []string{"version", "-o", "json"}
-		out, err := exec.Command(azBin, args...).Output()
+		// azBin is a fixed path/name and args are constant here.
+		//nolint:gosec // G204: fixed az binary, constant args
+		out, err := exec.CommandContext(
+			context.Background(), azBin, args...,
+		).Output()
 		applog.Cmd(azBin, args, string(out), err)
 		if err != nil {
 			args = []string{"--version"}
-			out, err = exec.Command(azBin, args...).Output()
+			//nolint:gosec // G204: fixed az binary, constant args
+			out, err = exec.CommandContext(
+				context.Background(), azBin, args...,
+			).Output()
 			applog.Cmd(azBin, args, string(out), err)
 		}
 		if err != nil {
@@ -214,7 +228,10 @@ func isExecutable(path string) bool {
 }
 
 func runCmd(name string, args ...string) error {
-	cmd := exec.Command(name, args...)
+	// name resolves to a fixed az/kubelogin binary; args come from trusted config.
+	cmd := exec.CommandContext( //nolint:gosec // G204: fixed binary, args from config
+		context.Background(), name, args...,
+	)
 	var buf bytes.Buffer
 	cmd.Stderr = &buf
 	cmd.Stdout = &buf

@@ -13,18 +13,18 @@ import (
 )
 
 const (
-	keepSessions = 10
-	sessionGlob  = "session-*.log"
+	keepSessions  = 10
+	sessionGlob   = "session-*.log"
 	maxRecentCmds = 20
 )
 
 var (
-	mu     sync.Mutex
-	file   *os.File
-	dirFn  = defaultDir
-	nowFn  = time.Now
-	pidFn  = os.Getpid
-	version = "dev"
+	mutex      sync.Mutex
+	file       *os.File
+	dirFn      = defaultDir
+	nowFn      = time.Now
+	pidFn      = os.Getpid
+	version    = "dev"
 	recentCmds []string
 )
 
@@ -42,8 +42,8 @@ func SetDirForTest(dir string) {
 
 // ResetForTest closes any open log and restores defaults (tests only).
 func ResetForTest() {
-	mu.Lock()
-	defer mu.Unlock()
+	mutex.Lock()
+	defer mutex.Unlock()
 	if file != nil {
 		_ = file.Close()
 		file = nil
@@ -85,8 +85,8 @@ func Dir() string {
 // Init creates the log directory, opens a new session file, and prunes old sessions.
 // Failures are best-effort: returns an error for the caller to warn, but Infof/Cmd stay no-ops.
 func Init() error {
-	mu.Lock()
-	defer mu.Unlock()
+	mutex.Lock()
+	defer mutex.Unlock()
 
 	if file != nil {
 		_ = file.Close()
@@ -94,13 +94,15 @@ func Init() error {
 	}
 
 	dir := dirFn()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return fmt.Errorf("create log dir: %w", err)
 	}
 
 	name := fmt.Sprintf("session-%s.log", nowFn().Format("20060102-150405"))
 	path := filepath.Join(dir, name)
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	// path is derived from the program-controlled log dir and a timestamped name.
+	const flags = os.O_CREATE | os.O_WRONLY | os.O_APPEND
+	f, err := os.OpenFile(path, flags, 0o600) //nolint:gosec // G304: trusted session log path
 	if err != nil {
 		return fmt.Errorf("open session log: %w", err)
 	}
@@ -116,7 +118,7 @@ func Init() error {
 
 	if err := pruneLocked(dir); err != nil {
 		// Non-fatal: session file is usable even if prune fails.
-		_, _ = file.WriteString(fmt.Sprintf("%s prune warning: %v\n", stamp(), err))
+		_, _ = fmt.Fprintf(file, "%s prune warning: %v\n", stamp(), err)
 	}
 	return nil
 }
@@ -140,8 +142,8 @@ func pruneLocked(dir string) error {
 
 // Close flushes and closes the session log.
 func Close() {
-	mu.Lock()
-	defer mu.Unlock()
+	mutex.Lock()
+	defer mutex.Unlock()
 	if file == nil {
 		return
 	}
@@ -152,8 +154,8 @@ func Close() {
 // Writer returns a writer that appends to the session log (mutex-safe).
 // Returns io.Discard when logging is not initialized.
 func Writer() io.Writer {
-	mu.Lock()
-	defer mu.Unlock()
+	mutex.Lock()
+	defer mutex.Unlock()
 	if file == nil {
 		return io.Discard
 	}
@@ -162,20 +164,20 @@ func Writer() io.Writer {
 
 type logWriter struct{}
 
-func (logWriter) Write(p []byte) (int, error) {
-	mu.Lock()
-	defer mu.Unlock()
+func (logWriter) Write(data []byte) (int, error) {
+	mutex.Lock()
+	defer mutex.Unlock()
 	if file == nil {
-		return len(p), nil
+		return len(data), nil
 	}
-	return file.Write(p)
+	return file.Write(data)
 }
 
 // Infof writes a timestamped info line.
 // Lines that look like shell starts ("starting interactive: …") are also recorded in RecentCmds.
 func Infof(format string, args ...any) {
-	mu.Lock()
-	defer mu.Unlock()
+	mutex.Lock()
+	defer mutex.Unlock()
 	msg := fmt.Sprintf(format, args...)
 	if strings.HasPrefix(msg, "starting interactive: ") {
 		recordCmdLocked(strings.TrimPrefix(msg, "starting interactive: "))
@@ -188,8 +190,8 @@ func Infof(format string, args ...any) {
 
 // Cmd logs an external command invocation and its combined output.
 func Cmd(name string, args []string, output string, err error) {
-	mu.Lock()
-	defer mu.Unlock()
+	mutex.Lock()
+	defer mutex.Unlock()
 	line := name
 	if len(args) > 0 {
 		line += " " + strings.Join(args, " ")
@@ -198,33 +200,32 @@ func Cmd(name string, args []string, output string, err error) {
 	if file == nil {
 		return
 	}
-	var b strings.Builder
-	b.WriteString(stamp())
-	b.WriteString(" $ ")
-	b.WriteString(line)
-	b.WriteString("\n")
+	var buf strings.Builder
+	buf.WriteString(stamp())
+	buf.WriteString(" $ ")
+	buf.WriteString(line)
+	buf.WriteString("\n")
 	out := strings.TrimSpace(output)
 	if out != "" {
-		b.WriteString(out)
-		b.WriteString("\n")
+		buf.WriteString(out)
+		buf.WriteString("\n")
 	}
 	if err != nil {
-		b.WriteString(stamp())
-		b.WriteString(" exit: error: ")
-		b.WriteString(err.Error())
-		b.WriteString("\n")
+		buf.WriteString(stamp())
+		buf.WriteString(" exit: error: ")
+		buf.WriteString(err.Error())
+		buf.WriteString("\n")
 	} else {
-		b.WriteString(stamp())
-		b.WriteString(" exit: ok\n")
+		buf.WriteString(stamp())
+		buf.WriteString(" exit: ok\n")
 	}
-	_, _ = file.WriteString(b.String())
+	_, _ = file.WriteString(buf.String())
 }
-
 
 // RecentCmds returns a copy of the recent shell command lines (oldest first).
 func RecentCmds() []string {
-	mu.Lock()
-	defer mu.Unlock()
+	mutex.Lock()
+	defer mutex.Unlock()
 	out := make([]string, len(recentCmds))
 	copy(out, recentCmds)
 	return out
