@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -84,11 +85,13 @@ func (model Model) execIntoContainer() (tea.Model, tea.Cmd) {
 	model.loading = true
 	model.err = ""
 	model.status = fmt.Sprintf("exec %s / %s…", model.podName, container)
-	id := model.beginCmd(line, false)
+	cmdID := model.beginCmd(line, false)
 	// kubectl is a fixed binary; args are built from trusted config/selection.
-	cmd := exec.Command("kubectl", args...) //nolint:gosec // G204: fixed kubectl binary, args from config
+	cmd := exec.CommandContext( //nolint:gosec // G204: fixed kubectl binary, args from config
+		context.Background(), "kubectl", args...,
+	)
 	return model, tea.Batch(model.maybeCmdAnim(), tea.ExecProcess(cmd, func(err error) tea.Msg {
-		return execMsg{poolIdx: poolIdx, envIdx: envIdx, cmdID: id, err: err}
+		return execMsg{poolIdx: poolIdx, envIdx: envIdx, cmdID: cmdID, err: err}
 	}))
 }
 

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os/exec"
 	"runtime"
@@ -18,7 +19,9 @@ func copyToClipboard(text string) error {
 	var lastErr error
 	for _, candidate := range candidates {
 		// Commands come from clipboardCommands(), a fixed allowlist of known tools.
-		cmd := exec.Command(candidate[0], candidate[1:]...) //nolint:gosec // G204: fixed clipboard tool allowlist
+		cmd := exec.CommandContext( //nolint:gosec // G204: fixed clipboard tool allowlist
+			context.Background(), candidate[0], candidate[1:]...,
+		)
 		cmd.Stdin = strings.NewReader(text)
 		var stderr bytes.Buffer
 		cmd.Stderr = &stderr

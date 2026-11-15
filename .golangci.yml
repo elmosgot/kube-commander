@@ -8,9 +8,11 @@ formatters:
 linters:
   default: none
   enable:
+    - bodyclose
+    - contextcheck
+    - dupl
     - errcheck
     - errorlint
-    - dupl
     - funlen
     - gocognit
     - goconst
@@ -20,10 +22,15 @@ linters:
     - govet
     - ineffassign
     - lll
+    - makezero
     - misspell
     - nestif
+    - nilerr
+    - noctx
+    - prealloc
     - revive
     - staticcheck
+    - unconvert
     - unused
     - varnamelen
   settings:
