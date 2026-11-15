@@ -106,13 +106,13 @@ func loadFallback(path, examplePath string, readErr error) (data []byte, resolve
 }
 
 // Validate checks required fields and uniqueness.
-func (c *Config) Validate() error {
-	if len(c.Pools) == 0 {
+func (cfg *Config) Validate() error {
+	if len(cfg.Pools) == 0 {
 		return fmt.Errorf("config must define at least one pool")
 	}
 
-	poolNames := make(map[string]struct{}, len(c.Pools))
-	for i, pool := range c.Pools {
+	poolNames := make(map[string]struct{}, len(cfg.Pools))
+	for i, pool := range cfg.Pools {
 		name := strings.TrimSpace(pool.Name)
 		if name == "" {
 			return fmt.Errorf("pools[%d]: name is required", i)
@@ -121,7 +121,7 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("duplicate pool name %q", name)
 		}
 		poolNames[name] = struct{}{}
-		c.Pools[i].Name = name
+		cfg.Pools[i].Name = name
 
 		if len(pool.Environments) == 0 {
 			return fmt.Errorf("pool %q: at least one environment is required", name)
@@ -143,43 +143,43 @@ func (c *Config) Validate() error {
 				return fmt.Errorf("pool %q environment %q: context is required", name, envName)
 			}
 
-			ns := strings.TrimSpace(env.Namespace)
-			kc := strings.TrimSpace(env.Kubeconfig)
+			namespaceName := strings.TrimSpace(env.Namespace)
+			kubeconfig := strings.TrimSpace(env.Kubeconfig)
 
 			if env.Azure != nil {
-				rg := strings.TrimSpace(env.Azure.ResourceGroup)
+				resourceGroup := strings.TrimSpace(env.Azure.ResourceGroup)
 				cluster := strings.TrimSpace(env.Azure.Cluster)
 				sub := strings.TrimSpace(env.Azure.Subscription)
-				if rg == "" {
+				if resourceGroup == "" {
 					return fmt.Errorf("pool %q environment %q: azure.resource_group is required", name, envName)
 				}
 				if cluster == "" {
 					return fmt.Errorf("pool %q environment %q: azure.cluster is required", name, envName)
 				}
-				c.Pools[i].Environments[j].Azure = &AzureConfig{
+				cfg.Pools[i].Environments[j].Azure = &AzureConfig{
 					Subscription:  sub,
-					ResourceGroup: rg,
+					ResourceGroup: resourceGroup,
 					Cluster:       cluster,
 				}
 			}
 
-			c.Pools[i].Environments[j].Name = envName
-			c.Pools[i].Environments[j].Context = ctx
-			c.Pools[i].Environments[j].Namespace = ns
-			c.Pools[i].Environments[j].Kubeconfig = kc
+			cfg.Pools[i].Environments[j].Name = envName
+			cfg.Pools[i].Environments[j].Context = ctx
+			cfg.Pools[i].Environments[j].Namespace = namespaceName
+			cfg.Pools[i].Environments[j].Kubeconfig = kubeconfig
 		}
 	}
 	return nil
 }
 
-func (c *Config) expandPaths() {
-	for i := range c.Pools {
-		for j := range c.Pools[i].Environments {
-			kc := c.Pools[i].Environments[j].Kubeconfig
-			if kc == "" {
+func (cfg *Config) expandPaths() {
+	for i := range cfg.Pools {
+		for j := range cfg.Pools[i].Environments {
+			kubeconfig := cfg.Pools[i].Environments[j].Kubeconfig
+			if kubeconfig == "" {
 				continue
 			}
-			c.Pools[i].Environments[j].Kubeconfig = expandHome(kc)
+			cfg.Pools[i].Environments[j].Kubeconfig = expandHome(kubeconfig)
 		}
 	}
 }

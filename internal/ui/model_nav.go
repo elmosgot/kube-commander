@@ -6,349 +6,349 @@ import (
 	"github.com/elmosgot/kube-commander/internal/config"
 )
 
-func (m Model) updateLeft(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (model Model) updateLeft(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "up", "k":
-		if m.leftCursor > 0 {
-			m.leftCursor--
+		if model.leftCursor > 0 {
+			model.leftCursor--
 		}
-		return m, nil
+		return model, nil
 	case keyDown, "j":
-		if m.leftCursor < len(m.leftRows)-1 {
-			m.leftCursor++
+		if model.leftCursor < len(model.leftRows)-1 {
+			model.leftCursor++
 		}
-		return m, nil
+		return model, nil
 	case "enter", "right":
-		return m.openLeftSelection()
+		return model.openLeftSelection()
 	case "left", "h":
-		return m.collapseLeftPool()
+		return model.collapseLeftPool()
 	}
-	return m, nil
+	return model, nil
 }
 
 // openLeftSelection toggles a pool header or opens the selected environment.
-func (m Model) openLeftSelection() (tea.Model, tea.Cmd) {
-	if len(m.leftRows) == 0 {
-		return m, nil
+func (model Model) openLeftSelection() (tea.Model, tea.Cmd) {
+	if len(model.leftRows) == 0 {
+		return model, nil
 	}
-	row := m.leftRows[m.leftCursor]
+	row := model.leftRows[model.leftCursor]
 	if row.isPool {
-		m.expanded[row.poolIdx] = !m.expanded[row.poolIdx]
-		m.rebuildLeft()
-		return m, nil
+		model.expanded[row.poolIdx] = !model.expanded[row.poolIdx]
+		model.rebuildLeft()
+		return model, nil
 	}
-	env := m.cfg.Pools[row.poolIdx].Environments[row.envIdx]
-	m.stopLogFollow()
-	m.resetForEnvOpen()
-	m.focus = paneRight
+	env := model.cfg.Pools[row.poolIdx].Environments[row.envIdx]
+	model.stopLogFollow()
+	model.resetForEnvOpen()
+	model.focus = paneRight
 	if env.Namespace != "" {
-		m.rightView = viewWorkloads
-		m.namespace = env.Namespace
-		m, cmd := m.tracked(m.kubectlLineWorkloads(env.Namespace), false, func() tea.Msg {
-			return m.fetchWorkloads(env, row.poolIdx, row.envIdx, env.Namespace)
+		model.rightView = viewWorkloads
+		model.namespace = env.Namespace
+		m, cmd := model.tracked(model.kubectlLineWorkloads(env.Namespace), false, func() tea.Msg {
+			return model.fetchWorkloads(env, row.poolIdx, row.envIdx, env.Namespace)
 		})
 		return m, tea.Batch(m.spinner.Tick, cmd)
 	}
-	m.rightView = viewNamespaces
-	m.namespace = ""
-	m, cmd := m.tracked(m.kubectlLineNamespaces(), false, func() tea.Msg {
-		return m.fetchNamespaces(env, row.poolIdx, row.envIdx)
+	model.rightView = viewNamespaces
+	model.namespace = ""
+	model, cmd := model.tracked(model.kubectlLineNamespaces(), false, func() tea.Msg {
+		return model.fetchNamespaces(env, row.poolIdx, row.envIdx)
 	})
-	return m, tea.Batch(m.spinner.Tick, cmd)
+	return model, tea.Batch(model.spinner.Tick, cmd)
 }
 
 // resetForEnvOpen clears right-pane state before opening a freshly selected env.
-func (m *Model) resetForEnvOpen() {
-	m.loading = true
-	m.autoRefreshBusy = false
-	m.err = ""
-	m.status = ""
-	m.namespaces = nil
-	m.workloads = nil
-	m.pods = nil
-	m.podDetail = nil
-	m.deployment = ""
-	m.podName = ""
-	m.logText = ""
-	m.logScroll = 0
-	m.clearLogFilter()
-	m.rightCursor = 0
+func (model *Model) resetForEnvOpen() {
+	model.loading = true
+	model.autoRefreshBusy = false
+	model.err = ""
+	model.status = ""
+	model.namespaces = nil
+	model.workloads = nil
+	model.pods = nil
+	model.podDetail = nil
+	model.deployment = ""
+	model.podName = ""
+	model.logText = ""
+	model.logScroll = 0
+	model.clearLogFilter()
+	model.rightCursor = 0
 }
 
 // collapseLeftPool collapses the current pool and parks the cursor on its header.
-func (m Model) collapseLeftPool() (tea.Model, tea.Cmd) {
-	if len(m.leftRows) == 0 {
-		return m, nil
+func (model Model) collapseLeftPool() (tea.Model, tea.Cmd) {
+	if len(model.leftRows) == 0 {
+		return model, nil
 	}
-	row := m.leftRows[m.leftCursor]
-	m.expanded[row.poolIdx] = false
-	m.rebuildLeft()
+	row := model.leftRows[model.leftCursor]
+	model.expanded[row.poolIdx] = false
+	model.rebuildLeft()
 	if !row.isPool {
-		for i, r := range m.leftRows {
+		for i, r := range model.leftRows {
 			if r.poolIdx == row.poolIdx && r.isPool {
-				m.leftCursor = i
+				model.leftCursor = i
 				break
 			}
 		}
 	}
-	return m, nil
+	return model, nil
 }
 
-func (m Model) updateRight(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.rightView == viewPodLogs && m.logFilterActive {
-		return m.updateLogFilter(msg)
+func (model Model) updateRight(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if model.rightView == viewPodLogs && model.logFilterActive {
+		return model.updateLogFilter(msg)
 	}
 	switch msg.String() {
 	case "up", "k":
-		return m.moveRight(-1)
+		return model.moveRight(-1)
 	case keyDown, "j":
-		return m.moveRight(1)
+		return model.moveRight(1)
 	case "pgup":
-		return m.moveRight(-10)
+		return model.moveRight(-10)
 	case "pgdown":
-		return m.moveRight(10)
+		return model.moveRight(10)
 	case "enter", "right":
-		return m.openRight()
+		return model.openRight()
 	case "f", "/":
-		if m.rightView == viewPodLogs {
-			m.logFilterActive = true
-			m.logFilter = ""
-			m.logScroll = 0
-			return m, nil
+		if model.rightView == viewPodLogs {
+			model.logFilterActive = true
+			model.logFilter = ""
+			model.logScroll = 0
+			return model, nil
 		}
 	case "y":
-		if m.rightView == viewPodLogs {
-			if idx, ok := logLineAtVisualOffset(m.visualLogRows(), m.logScroll, 0); ok {
-				m.copyLogLogicalLine(idx)
+		if model.rightView == viewPodLogs {
+			if idx, ok := logLineAtVisualOffset(model.visualLogRows(), model.logScroll, 0); ok {
+				model.copyLogLogicalLine(idx)
 			}
-			return m, nil
+			return model, nil
 		}
 	case "backspace", "left", "h", "esc":
-		return m.backRight()
+		return model.backRight()
 	}
-	return m, nil
+	return model, nil
 }
 
-func (m Model) moveRight(delta int) (tea.Model, tea.Cmd) {
-	switch m.rightView {
+func (model Model) moveRight(delta int) (tea.Model, tea.Cmd) {
+	switch model.rightView {
 	case viewPodLogs:
-		return m.scrollLogs(delta)
+		return model.scrollLogs(delta)
 	case viewPodDetail:
-		return m.moveContainer(delta)
+		return model.moveContainer(delta)
 	default:
-		return m.moveCursor(delta)
+		return model.moveCursor(delta)
 	}
 }
 
-func (m Model) scrollLogs(delta int) (tea.Model, tea.Cmd) {
-	maxScroll := m.maxLogScroll()
-	m.logScroll += delta
-	if m.logScroll < 0 {
-		m.logScroll = 0
+func (model Model) scrollLogs(delta int) (tea.Model, tea.Cmd) {
+	maxScroll := model.maxLogScroll()
+	model.logScroll += delta
+	if model.logScroll < 0 {
+		model.logScroll = 0
 	}
-	if m.logScroll > maxScroll {
-		m.logScroll = maxScroll
+	if model.logScroll > maxScroll {
+		model.logScroll = maxScroll
 	}
-	m.logStickBottom = m.logScroll >= maxScroll
-	return m, nil
+	model.logStickBottom = model.logScroll >= maxScroll
+	return model, nil
 }
 
-func (m Model) moveContainer(delta int) (tea.Model, tea.Cmd) {
-	if m.podDetail == nil || len(m.podDetail.Containers) == 0 {
-		return m, nil
+func (model Model) moveContainer(delta int) (tea.Model, tea.Cmd) {
+	if model.podDetail == nil || len(model.podDetail.Containers) == 0 {
+		return model, nil
 	}
-	m.containerIdx += delta
-	if m.containerIdx < 0 {
-		m.containerIdx = 0
+	model.containerIdx += delta
+	if model.containerIdx < 0 {
+		model.containerIdx = 0
 	}
-	if m.containerIdx >= len(m.podDetail.Containers) {
-		m.containerIdx = len(m.podDetail.Containers) - 1
+	if model.containerIdx >= len(model.podDetail.Containers) {
+		model.containerIdx = len(model.podDetail.Containers) - 1
 	}
-	return m, nil
+	return model, nil
 }
 
-func (m Model) moveCursor(delta int) (tea.Model, tea.Cmd) {
-	max := m.rightLen() - 1
+func (model Model) moveCursor(delta int) (tea.Model, tea.Cmd) {
+	max := model.rightLen() - 1
 	if max < 0 {
-		return m, nil
+		return model, nil
 	}
-	m.rightCursor += delta
-	if m.rightCursor < 0 {
-		m.rightCursor = 0
+	model.rightCursor += delta
+	if model.rightCursor < 0 {
+		model.rightCursor = 0
 	}
-	if m.rightCursor > max {
-		m.rightCursor = max
+	if model.rightCursor > max {
+		model.rightCursor = max
 	}
-	return m, nil
+	return model, nil
 }
 
-func (m Model) openRight() (tea.Model, tea.Cmd) {
-	env, poolIdx, envIdx, ok := m.selectedEnv()
+func (model Model) openRight() (tea.Model, tea.Cmd) {
+	env, poolIdx, envIdx, ok := model.selectedEnv()
 	if !ok {
-		return m, nil
+		return model, nil
 	}
-	switch m.rightView {
+	switch model.rightView {
 	case viewNamespaces:
-		return m.openNamespace(env, poolIdx, envIdx)
+		return model.openNamespace(env, poolIdx, envIdx)
 	case viewWorkloads:
-		return m.openWorkload(env, poolIdx, envIdx)
+		return model.openWorkload(env, poolIdx, envIdx)
 	case viewPods:
-		return m.openPod(env, poolIdx, envIdx)
+		return model.openPod(env, poolIdx, envIdx)
 	case viewPodDetail:
-		return m.openPodLogs()
+		return model.openPodLogs()
 	}
-	return m, nil
+	return model, nil
 }
 
-func (m Model) openNamespace(env config.Environment, poolIdx, envIdx int) (tea.Model, tea.Cmd) {
-	if len(m.namespaces) == 0 {
-		return m, nil
+func (model Model) openNamespace(env config.Environment, poolIdx, envIdx int) (tea.Model, tea.Cmd) {
+	if len(model.namespaces) == 0 {
+		return model, nil
 	}
-	ns := m.namespaces[m.rightCursor].Name
-	m.namespace = ns
-	m.rightView = viewWorkloads
-	m.workloads = nil
-	m.rightCursor = 0
-	m.loading = true
-	m.err = ""
-	m.status = ""
-	m, cmd := m.tracked(m.kubectlLineWorkloads(ns), false, func() tea.Msg {
-		return m.fetchWorkloads(env, poolIdx, envIdx, ns)
+	namespaceName := model.namespaces[model.rightCursor].Name
+	model.namespace = namespaceName
+	model.rightView = viewWorkloads
+	model.workloads = nil
+	model.rightCursor = 0
+	model.loading = true
+	model.err = ""
+	model.status = ""
+	model, cmd := model.tracked(model.kubectlLineWorkloads(namespaceName), false, func() tea.Msg {
+		return model.fetchWorkloads(env, poolIdx, envIdx, namespaceName)
 	})
-	return m, tea.Batch(m.spinner.Tick, cmd)
+	return model, tea.Batch(model.spinner.Tick, cmd)
 }
 
-func (m Model) openWorkload(env config.Environment, poolIdx, envIdx int) (tea.Model, tea.Cmd) {
-	if len(m.workloads) == 0 {
-		return m, nil
+func (model Model) openWorkload(env config.Environment, poolIdx, envIdx int) (tea.Model, tea.Cmd) {
+	if len(model.workloads) == 0 {
+		return model, nil
 	}
-	dep := m.workloads[m.rightCursor].Name
-	m.deployment = dep
-	m.rightView = viewPods
-	m.pods = nil
-	m.rightCursor = 0
-	m.loading = true
-	m.err = ""
-	m.status = ""
-	ns := m.namespace
-	m, cmd := m.tracked(m.kubectlLinePods(ns, dep), false, func() tea.Msg {
-		return m.fetchPods(env, poolIdx, envIdx, ns, dep)
+	dep := model.workloads[model.rightCursor].Name
+	model.deployment = dep
+	model.rightView = viewPods
+	model.pods = nil
+	model.rightCursor = 0
+	model.loading = true
+	model.err = ""
+	model.status = ""
+	ns := model.namespace
+	model, cmd := model.tracked(model.kubectlLinePods(ns, dep), false, func() tea.Msg {
+		return model.fetchPods(env, poolIdx, envIdx, ns, dep)
 	})
-	return m, tea.Batch(m.spinner.Tick, cmd)
+	return model, tea.Batch(model.spinner.Tick, cmd)
 }
 
-func (m Model) openPod(env config.Environment, poolIdx, envIdx int) (tea.Model, tea.Cmd) {
-	if len(m.pods) == 0 {
-		return m, nil
+func (model Model) openPod(env config.Environment, poolIdx, envIdx int) (tea.Model, tea.Cmd) {
+	if len(model.pods) == 0 {
+		return model, nil
 	}
-	pod := m.pods[m.rightCursor].Name
-	m.podName = pod
-	m.rightView = viewPodDetail
-	m.podDetail = nil
-	m.containerIdx = 0
-	m.loading = true
-	m.err = ""
-	m.status = ""
-	ns := m.namespace
-	m, cmd := m.tracked(m.kubectlLinePodDetail(ns, pod), false, func() tea.Msg {
-		return m.fetchPodDetail(env, poolIdx, envIdx, ns, pod)
+	pod := model.pods[model.rightCursor].Name
+	model.podName = pod
+	model.rightView = viewPodDetail
+	model.podDetail = nil
+	model.containerIdx = 0
+	model.loading = true
+	model.err = ""
+	model.status = ""
+	ns := model.namespace
+	model, cmd := model.tracked(model.kubectlLinePodDetail(ns, pod), false, func() tea.Msg {
+		return model.fetchPodDetail(env, poolIdx, envIdx, ns, pod)
 	})
-	return m, tea.Batch(m.spinner.Tick, cmd)
+	return model, tea.Batch(model.spinner.Tick, cmd)
 }
 
-func (m Model) backRight() (tea.Model, tea.Cmd) {
-	switch m.rightView {
+func (model Model) backRight() (tea.Model, tea.Cmd) {
+	switch model.rightView {
 	case viewPodLogs:
-		return m.backFromPodLogs()
+		return model.backFromPodLogs()
 	case viewPodDetail:
-		return m.backToPods()
+		return model.backToPods()
 	case viewPods:
-		return m.backToWorkloads()
+		return model.backToWorkloads()
 	case viewWorkloads:
-		return m.backToLeft()
+		return model.backToLeft()
 	default:
-		m.focus = paneLeft
-		return m, nil
+		model.focus = paneLeft
+		return model, nil
 	}
 }
 
-func (m Model) backFromPodLogs() (tea.Model, tea.Cmd) {
-	m.stopLogFollow()
-	m.rightView = viewPodDetail
-	m.logText = ""
-	m.logScroll = 0
-	m.logStickBottom = true
-	m.clearLogFilter()
-	m.err = ""
-	m.status = ""
-	return m, nil
+func (model Model) backFromPodLogs() (tea.Model, tea.Cmd) {
+	model.stopLogFollow()
+	model.rightView = viewPodDetail
+	model.logText = ""
+	model.logScroll = 0
+	model.logStickBottom = true
+	model.clearLogFilter()
+	model.err = ""
+	model.status = ""
+	return model, nil
 }
 
-func (m Model) backToPods() (tea.Model, tea.Cmd) {
-	m.rightView = viewPods
-	m.podDetail = nil
-	m.podName = ""
-	m.containerIdx = 0
-	m.rightCursor = 0
-	m.err = ""
-	m.status = ""
-	m.loading = true
-	env, poolIdx, envIdx, ok := m.selectedEnv()
+func (model Model) backToPods() (tea.Model, tea.Cmd) {
+	model.rightView = viewPods
+	model.podDetail = nil
+	model.podName = ""
+	model.containerIdx = 0
+	model.rightCursor = 0
+	model.err = ""
+	model.status = ""
+	model.loading = true
+	env, poolIdx, envIdx, ok := model.selectedEnv()
 	if !ok {
-		return m, nil
+		return model, nil
 	}
-	ns, dep := m.namespace, m.deployment
-	m, cmd := m.tracked(m.kubectlLinePods(ns, dep), false, func() tea.Msg {
-		return m.fetchPods(env, poolIdx, envIdx, ns, dep)
+	ns, dep := model.namespace, model.deployment
+	model, cmd := model.tracked(model.kubectlLinePods(ns, dep), false, func() tea.Msg {
+		return model.fetchPods(env, poolIdx, envIdx, ns, dep)
 	})
-	return m, tea.Batch(m.spinner.Tick, cmd)
+	return model, tea.Batch(model.spinner.Tick, cmd)
 }
 
-func (m Model) backToWorkloads() (tea.Model, tea.Cmd) {
-	m.rightView = viewWorkloads
-	m.pods = nil
-	m.deployment = ""
-	m.rightCursor = 0
-	m.err = ""
-	m.status = ""
-	m.loading = true
-	env, poolIdx, envIdx, ok := m.selectedEnv()
+func (model Model) backToWorkloads() (tea.Model, tea.Cmd) {
+	model.rightView = viewWorkloads
+	model.pods = nil
+	model.deployment = ""
+	model.rightCursor = 0
+	model.err = ""
+	model.status = ""
+	model.loading = true
+	env, poolIdx, envIdx, ok := model.selectedEnv()
 	if !ok {
-		return m, nil
+		return model, nil
 	}
-	ns := m.namespace
-	m, cmd := m.tracked(m.kubectlLineWorkloads(ns), false, func() tea.Msg {
-		return m.fetchWorkloads(env, poolIdx, envIdx, ns)
+	ns := model.namespace
+	model, cmd := model.tracked(model.kubectlLineWorkloads(ns), false, func() tea.Msg {
+		return model.fetchWorkloads(env, poolIdx, envIdx, ns)
 	})
-	return m, tea.Batch(m.spinner.Tick, cmd)
+	return model, tea.Batch(model.spinner.Tick, cmd)
 }
 
 // backToLeft always returns to the left pools pane (skip namespaces; often Forbidden).
-func (m Model) backToLeft() (tea.Model, tea.Cmd) {
-	m.workloads = nil
-	m.namespace = ""
-	m.rightCursor = 0
-	m.err = ""
-	m.status = ""
-	m.loading = false
-	m.focus = paneLeft
-	return m, nil
+func (model Model) backToLeft() (tea.Model, tea.Cmd) {
+	model.workloads = nil
+	model.namespace = ""
+	model.rightCursor = 0
+	model.err = ""
+	model.status = ""
+	model.loading = false
+	model.focus = paneLeft
+	return model, nil
 }
 
-func (m Model) rightLen() int {
-	switch m.rightView {
+func (model Model) rightLen() int {
+	switch model.rightView {
 	case viewWorkloads:
-		return len(m.workloads)
+		return len(model.workloads)
 	case viewPods:
-		return len(m.pods)
+		return len(model.pods)
 	case viewPodDetail:
-		if m.podDetail == nil {
+		if model.podDetail == nil {
 			return 0
 		}
-		return len(m.podDetail.Containers)
+		return len(model.podDetail.Containers)
 	case viewPodLogs:
-		return len(m.filteredLogLines())
+		return len(model.filteredLogLines())
 	default:
-		return len(m.namespaces)
+		return len(model.namespaces)
 	}
 }

@@ -157,13 +157,13 @@ func ParseAzVersion(output string) (major, minor, patch int, err error) {
 }
 
 func parseSemver(s string) (major, minor, patch int, err error) {
-	m := semverRe.FindStringSubmatch(s)
-	if m == nil {
+	matches := semverRe.FindStringSubmatch(s)
+	if matches == nil {
 		return 0, 0, 0, fmt.Errorf("no semver in %q", s)
 	}
-	major, _ = strconv.Atoi(m[1])
-	minor, _ = strconv.Atoi(m[2])
-	patch, _ = strconv.Atoi(m[3])
+	major, _ = strconv.Atoi(matches[1])
+	minor, _ = strconv.Atoi(matches[2])
+	patch, _ = strconv.Atoi(matches[3])
 	return major, minor, patch, nil
 }
 

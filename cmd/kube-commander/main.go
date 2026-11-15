@@ -75,13 +75,13 @@ func findExampleConfig() string {
 			filepath.Join(wd, "configs", "example.yaml"),
 		)
 	}
-	for _, c := range candidates {
-		if st, err := os.Stat(c); err == nil && !st.IsDir() {
-			abs, err := filepath.Abs(c)
+	for _, candidate := range candidates {
+		if st, err := os.Stat(candidate); err == nil && !st.IsDir() {
+			abs, err := filepath.Abs(candidate)
 			if err == nil {
 				return abs
 			}
-			return c
+			return candidate
 		}
 	}
 	return "configs/example.yaml"

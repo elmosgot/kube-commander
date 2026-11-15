@@ -39,15 +39,15 @@ func layoutHeights(terminalH int, showCmds bool) (bodyH, cmdsH int) {
 	return bodyH, cmdsH
 }
 
-func (m Model) paneWidths() (leftW, rightW int) {
-	leftW = m.width / 3
+func (model Model) paneWidths() (leftW, rightW int) {
+	leftW = model.width / 3
 	if leftW < 24 {
 		leftW = 24
 	}
 	if leftW > 40 {
 		leftW = 40
 	}
-	rightW = m.width - leftW - 1
+	rightW = model.width - leftW - 1
 	if rightW < 20 {
 		rightW = 20
 	}
@@ -55,41 +55,41 @@ func (m Model) paneWidths() (leftW, rightW int) {
 }
 
 // View renders the two panes and footer.
-func (m Model) View() string {
-	if m.width == 0 {
+func (model Model) View() string {
+	if model.width == 0 {
 		return "loading..."
 	}
 
-	bodyH, cmdsH := layoutHeights(m.height, m.showCmds)
-	leftW, rightW := m.paneWidths()
+	bodyH, cmdsH := layoutHeights(model.height, model.showCmds)
+	leftW, rightW := model.paneWidths()
 
-	left := m.renderLeft(leftW, bodyH)
-	right := m.renderRight(rightW, bodyH)
+	left := model.renderLeft(leftW, bodyH)
+	right := model.renderRight(rightW, bodyH)
 	body := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 
-	header := titleStyle.Render("kube-commander") + "  " + mutedStyle.Render(truncate(m.configPath, m.width-20))
-	footer := m.renderFooter()
-	help := m.renderHelp()
+	header := titleStyle.Render("kube-commander") + "  " + mutedStyle.Render(truncate(model.configPath, model.width-20))
+	footer := model.renderFooter()
+	help := model.renderHelp()
 
 	parts := []string{header, body}
-	if m.showCmds && cmdsH > 0 {
-		parts = append(parts, m.renderCmdsPanel(m.width, cmdsH))
+	if model.showCmds && cmdsH > 0 {
+		parts = append(parts, model.renderCmdsPanel(model.width, cmdsH))
 	}
 	parts = append(parts, footer, help)
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
 }
 
-func (m Model) renderHelp() string {
-	if m.rightView == viewPodLogs && m.logFilterActive {
-		line := "Filter: " + m.logFilter + "█  ·  ! exclude · | or · esc clear · ↑↓ scroll"
-		return helpStyle.Render(truncate(line, m.width))
+func (model Model) renderHelp() string {
+	if model.rightView == viewPodLogs && model.logFilterActive {
+		line := "Filter: " + model.logFilter + "█  ·  ! exclude · | or · esc clear · ↑↓ scroll"
+		return helpStyle.Render(truncate(line, model.width))
 	}
 
 	parts := []string{"↑↓ move", "tab focus"}
-	if m.focus == paneLeft {
+	if model.focus == paneLeft {
 		parts = append(parts, helpEnterOpen, helpAzLogin, helpEnsure, "c commands", "r refresh", "q quit")
 	} else {
-		switch m.rightView {
+		switch model.rightView {
 		case viewPodDetail:
 			parts = append(parts, helpLogs, helpShell, helpBackspaceBack, "c commands", "r refresh", "q quit")
 		case viewPodLogs:
@@ -101,16 +101,16 @@ func (m Model) renderHelp() string {
 			parts = append(parts, helpEnterOpen, helpBackspaceBack, "c commands", "r refresh", "q quit")
 		}
 	}
-	return helpStyle.Render(truncate(strings.Join(parts, " · "), m.width))
+	return helpStyle.Render(truncate(strings.Join(parts, " · "), model.width))
 }
 
-func (m Model) renderCmdsPanel(width, height int) string {
+func (model Model) renderCmdsPanel(width, height int) string {
 	inner := height - 2 // border
 	if inner < 1 {
 		inner = 1
 	}
 	now := time.Now()
-	rows := buildCmdPanelRows(m.cmdLog, m.cmdAnimFrame, now, width)
+	rows := buildCmdPanelRows(model.cmdLog, model.cmdAnimFrame, now, width)
 	// Show newest entries that fit (title + tail).
 	if len(rows) > inner {
 		keep := inner - 1
@@ -123,25 +123,25 @@ func (m Model) renderCmdsPanel(width, height int) string {
 		}
 		rows = append([]cmdPanelRow{rows[0]}, tail...)
 	}
-	var b strings.Builder
-	dotBright := m.cmdAnimFrame%2 == 0
+	var buf strings.Builder
+	dotBright := model.cmdAnimFrame%2 == 0
 	for _, row := range rows {
 		switch row.kind {
 		case rowKindTitle:
-			b.WriteString(sectionStyle.Render(row.text) + "\n")
+			buf.WriteString(sectionStyle.Render(row.text) + "\n")
 		case rowKindErr:
-			b.WriteString(errorStyle.Render("  "+row.text) + "\n")
+			buf.WriteString(errorStyle.Render("  "+row.text) + "\n")
 		default:
-			m.writeCmdRow(&b, row, dotBright)
+			model.writeCmdRow(&buf, row, dotBright)
 		}
 	}
-	if len(m.cmdLog) == 0 {
-		b.WriteString(cmdsStyle.Render("(no commands yet)") + "\n")
+	if len(model.cmdLog) == 0 {
+		buf.WriteString(cmdsStyle.Render("(no commands yet)") + "\n")
 	}
-	return fitBox(paneStyle, width, height, b.String())
+	return fitBox(paneStyle, width, height, buf.String())
 }
 
-func (m Model) writeCmdRow(b *strings.Builder, row cmdPanelRow, dotBright bool) {
+func (model Model) writeCmdRow(buf *strings.Builder, row cmdPanelRow, dotBright bool) {
 	cmdCols := row.cmdCols
 	if cmdCols < 8 {
 		cmdCols = 8
@@ -158,199 +158,199 @@ func (m Model) writeCmdRow(b *strings.Builder, row cmdPanelRow, dotBright bool) 
 	} else {
 		prefix = cmdsStyle.Render("  ")
 	}
-	b.WriteString(prefix + cmdsStyle.Render(cmdPart+" "+timing) + "\n")
+	buf.WriteString(prefix + cmdsStyle.Render(cmdPart+" "+timing) + "\n")
 }
 
 func fitBox(style lipgloss.Style, width, height int, content string) string {
 	return style.Width(width).Height(height).MaxWidth(width).MaxHeight(height).Render(content)
 }
 
-func (m Model) renderLeft(width, height int) string {
+func (model Model) renderLeft(width, height int) string {
 	border := paneStyle
-	if m.focus == paneLeft {
+	if model.focus == paneLeft {
 		border = paneFocusedStyle
 	}
-	var b strings.Builder
-	b.WriteString(sectionStyle.Render("Pools") + "\n")
+	var buf strings.Builder
+	buf.WriteString(sectionStyle.Render("Pools") + "\n")
 	innerRows := height - 2 // border top/bottom
 	if innerRows < 1 {
 		innerRows = 1
 	}
 	written := 1 // title
-	for i, row := range m.leftRows {
+	for i, row := range model.leftRows {
 		if written >= innerRows {
 			break
 		}
 		line := row.label
 		if row.isPool {
 			marker := "▾"
-			if !m.expanded[row.poolIdx] {
+			if !model.expanded[row.poolIdx] {
 				marker = "▸"
 			}
 			line = marker + " " + row.label
 		}
-		style := m.leftRowStyle(i, row)
-		b.WriteString(style.Width(width - 4).Render(truncate(line, width-4)))
-		b.WriteByte('\n')
+		style := model.leftRowStyle(i, row)
+		buf.WriteString(style.Width(width - 4).Render(truncate(line, width-4)))
+		buf.WriteByte('\n')
 		written++
 	}
-	return fitBox(border, width, height, b.String())
+	return fitBox(border, width, height, buf.String())
 }
 
 // leftRowStyle picks the style for a left-pane row based on cursor/focus/availability.
-func (m Model) leftRowStyle(i int, row leftRow) lipgloss.Style {
-	if i == m.leftCursor {
-		if m.focus == paneLeft {
+func (model Model) leftRowStyle(i int, row leftRow) lipgloss.Style {
+	if i == model.leftCursor {
+		if model.focus == paneLeft {
 			return selectedStyle
 		}
 		return selectedDimStyle
 	}
 	if !row.isPool {
-		env := m.cfg.Pools[row.poolIdx].Environments[row.envIdx]
-		if !m.available[envKey(env)] {
+		env := model.cfg.Pools[row.poolIdx].Environments[row.envIdx]
+		if !model.available[envKey(env)] {
 			return unavailableStyle
 		}
 	}
 	return itemStyle
 }
 
-func (m Model) renderRight(width, height int) string {
+func (model Model) renderRight(width, height int) string {
 	border := paneStyle
-	if m.focus == paneRight {
+	if model.focus == paneRight {
 		border = paneFocusedStyle
 	}
 
-	var b strings.Builder
-	b.WriteString(sectionStyle.Render(m.rightTitle()) + "\n")
+	var buf strings.Builder
+	buf.WriteString(sectionStyle.Render(model.rightTitle()) + "\n")
 
 	switch {
-	case m.loading:
-		b.WriteString(m.spinner.View() + " loading…\n")
-	case m.err != "" && m.rightView != viewPodLogs && m.rightLen() == 0:
-		b.WriteString(errorStyle.Render(truncate(m.err, width-4)) + "\n")
+	case model.loading:
+		buf.WriteString(model.spinner.View() + " loading…\n")
+	case model.err != "" && model.rightView != viewPodLogs && model.rightLen() == 0:
+		buf.WriteString(errorStyle.Render(truncate(model.err, width-4)) + "\n")
 	default:
-		m.renderRightBody(&b, width, height)
+		model.renderRightBody(&buf, width, height)
 	}
 
-	return fitBox(border, width, height, b.String())
+	return fitBox(border, width, height, buf.String())
 }
 
-func (m Model) rightTitle() string {
-	switch m.rightView {
+func (model Model) rightTitle() string {
+	switch model.rightView {
 	case viewWorkloads:
-		return fmt.Sprintf("Workloads · %s", m.namespace)
+		return fmt.Sprintf("Workloads · %s", model.namespace)
 	case viewPods:
-		return fmt.Sprintf("Pods · %s", m.deployment)
+		return fmt.Sprintf("Pods · %s", model.deployment)
 	case viewPodDetail:
-		return fmt.Sprintf("Pod · %s", m.podName)
+		return fmt.Sprintf("Pod · %s", model.podName)
 	case viewPodLogs:
-		return fmt.Sprintf("Logs · %s / %s", m.podName, m.selectedContainerName())
+		return fmt.Sprintf("Logs · %s / %s", model.podName, model.selectedContainerName())
 	default:
 		return "Namespaces"
 	}
 }
 
-func (m Model) renderRightBody(b *strings.Builder, width, height int) {
-	switch m.rightView {
+func (model Model) renderRightBody(buf *strings.Builder, width, height int) {
+	switch model.rightView {
 	case viewNamespaces:
-		m.renderNamespaceRows(b, width)
+		model.renderNamespaceRows(buf, width)
 	case viewWorkloads:
-		m.renderWorkloadRows(b, width)
+		model.renderWorkloadRows(buf, width)
 	case viewPods:
-		m.renderPodRows(b, width)
+		model.renderPodRows(buf, width)
 	case viewPodDetail:
-		m.renderPodDetail(b, width)
+		model.renderPodDetail(buf, width)
 	case viewPodLogs:
-		m.renderPodLogs(b, width, height)
+		model.renderPodLogs(buf, width, height)
 	}
 }
 
-func (m Model) rowStyle(selected bool) lipgloss.Style {
+func (model Model) rowStyle(selected bool) lipgloss.Style {
 	if !selected {
 		return itemStyle
 	}
-	if m.focus == paneRight {
+	if model.focus == paneRight {
 		return selectedStyle
 	}
 	return selectedDimStyle
 }
 
-func (m Model) renderNamespaceRows(b *strings.Builder, width int) {
-	if len(m.namespaces) == 0 {
-		b.WriteString(mutedStyle.Render("no namespaces") + "\n")
+func (model Model) renderNamespaceRows(buf *strings.Builder, width int) {
+	if len(model.namespaces) == 0 {
+		buf.WriteString(mutedStyle.Render("no namespaces") + "\n")
 		return
 	}
-	for i, ns := range m.namespaces {
+	for i, ns := range model.namespaces {
 		line := fmt.Sprintf("%-24s  deps %-3d  pods %d/%d",
 			ns.Name, ns.DeploymentCount, ns.ReadyPods, ns.TotalPods)
-		b.WriteString(m.rowStyle(i == m.rightCursor).Width(width - 4).Render(truncate(line, width-4)))
-		b.WriteByte('\n')
+		buf.WriteString(model.rowStyle(i == model.rightCursor).Width(width - 4).Render(truncate(line, width-4)))
+		buf.WriteByte('\n')
 	}
 }
 
-func (m Model) renderWorkloadRows(b *strings.Builder, width int) {
-	if len(m.workloads) == 0 {
-		b.WriteString(mutedStyle.Render("no deployments") + "\n")
+func (model Model) renderWorkloadRows(buf *strings.Builder, width int) {
+	if len(model.workloads) == 0 {
+		buf.WriteString(mutedStyle.Render("no deployments") + "\n")
 		return
 	}
-	for i, w := range m.workloads {
+	for i, w := range model.workloads {
 		line := fmt.Sprintf("%-28s  %d/%d  age %s", w.Name, w.Ready, w.Desired, w.Age)
-		b.WriteString(m.rowStyle(i == m.rightCursor).Width(width - 4).Render(truncate(line, width-4)))
-		b.WriteByte('\n')
+		buf.WriteString(model.rowStyle(i == model.rightCursor).Width(width - 4).Render(truncate(line, width-4)))
+		buf.WriteByte('\n')
 	}
 }
 
-func (m Model) renderPodRows(b *strings.Builder, width int) {
-	if len(m.pods) == 0 {
-		b.WriteString(mutedStyle.Render("no pods") + "\n")
+func (model Model) renderPodRows(buf *strings.Builder, width int) {
+	if len(model.pods) == 0 {
+		buf.WriteString(mutedStyle.Render("no pods") + "\n")
 		return
 	}
-	for i, p := range m.pods {
+	for i, p := range model.pods {
 		cpu := p.CPURequest + "/" + p.CPULimit
 		mem := p.MemRequest + "/" + p.MemLimit
 		line := fmt.Sprintf("%-28s  %-5s  r %-3d  %-10s  cpu %-12s  mem %-14s  %s",
 			p.Name, p.Ready, p.Restarts, p.Status, cpu, mem, p.Age)
-		b.WriteString(m.rowStyle(i == m.rightCursor).Width(width - 4).Render(truncate(line, width-4)))
-		b.WriteByte('\n')
+		buf.WriteString(model.rowStyle(i == model.rightCursor).Width(width - 4).Render(truncate(line, width-4)))
+		buf.WriteByte('\n')
 	}
 }
 
-func (m Model) renderPodDetail(b *strings.Builder, width int) {
-	if m.podDetail == nil {
-		b.WriteString(mutedStyle.Render("no pod detail") + "\n")
+func (model Model) renderPodDetail(buf *strings.Builder, width int) {
+	if model.podDetail == nil {
+		buf.WriteString(mutedStyle.Render("no pod detail") + "\n")
 		return
 	}
-	d := m.podDetail
-	fmt.Fprintf(b, "phase=%s  ready=%s  node=%s  ip=%s  age=%s\n",
+	d := model.podDetail
+	fmt.Fprintf(buf, "phase=%s  ready=%s  node=%s  ip=%s  age=%s\n",
 		d.Phase, d.Ready, d.Node, d.PodIP, d.Age)
-	b.WriteString(mutedStyle.Render("containers (enter/g = logs)") + "\n")
-	for i, c := range d.Containers {
+	buf.WriteString(mutedStyle.Render("containers (enter/g = logs)") + "\n")
+	for i, ctr := range d.Containers {
 		ready := "no"
-		if c.Ready {
+		if ctr.Ready {
 			ready = "yes"
 		}
 		line := fmt.Sprintf("%-20s  %-7s  rst %-3d  %-12s  cpu %s/%s  mem %s/%s",
-			c.Name, ready, c.Restarts, c.State, c.CPURequest, c.CPULimit, c.MemRequest, c.MemLimit)
-		b.WriteString(m.rowStyle(i == m.containerIdx).Width(width - 4).Render(truncate(line, width-4)))
-		b.WriteByte('\n')
-		img := "  image " + c.Image
-		b.WriteString(mutedStyle.Width(width - 4).Render(truncate(img, width-4)))
-		b.WriteByte('\n')
+			ctr.Name, ready, ctr.Restarts, ctr.State, ctr.CPURequest, ctr.CPULimit, ctr.MemRequest, ctr.MemLimit)
+		buf.WriteString(model.rowStyle(i == model.containerIdx).Width(width - 4).Render(truncate(line, width-4)))
+		buf.WriteByte('\n')
+		img := "  image " + ctr.Image
+		buf.WriteString(mutedStyle.Width(width - 4).Render(truncate(img, width-4)))
+		buf.WriteByte('\n')
 	}
 }
 
-func (m Model) renderPodLogs(b *strings.Builder, width, height int) {
-	if m.err != "" && m.logText == "" {
-		b.WriteString(errorStyle.Render(truncate(m.err, width-4)) + "\n")
+func (model Model) renderPodLogs(buf *strings.Builder, width, height int) {
+	if model.err != "" && model.logText == "" {
+		buf.WriteString(errorStyle.Render(truncate(model.err, width-4)) + "\n")
 		return
 	}
-	logical := m.filteredLogLines()
-	if m.logsEmpty(logical) {
-		if m.logFilterActive && m.logFilter != "" {
-			b.WriteString(mutedStyle.Render("no matching lines") + "\n")
+	logical := model.filteredLogLines()
+	if model.logsEmpty(logical) {
+		if model.logFilterActive && model.logFilter != "" {
+			buf.WriteString(mutedStyle.Render("no matching lines") + "\n")
 			return
 		}
-		b.WriteString(mutedStyle.Render("no log output") + "\n")
+		buf.WriteString(mutedStyle.Render("no log output") + "\n")
 		return
 	}
 	contentW := width - 4
@@ -362,24 +362,24 @@ func (m Model) renderPodLogs(b *strings.Builder, width, height int) {
 	if visible < 3 {
 		visible = 3
 	}
-	start, end := logWindow(len(rows), m.logScroll, visible)
+	start, end := logWindow(len(rows), model.logScroll, visible)
 	for _, row := range rows[start:end] {
-		b.WriteString(itemStyle.Width(contentW).Render(row.text))
-		b.WriteByte('\n')
+		buf.WriteString(itemStyle.Width(contentW).Render(row.text))
+		buf.WriteByte('\n')
 	}
 }
 
 // logsEmpty reports whether the filtered log slice has nothing worth rendering.
-func (m Model) logsEmpty(logical []string) bool {
+func (model Model) logsEmpty(logical []string) bool {
 	if len(logical) == 0 {
 		return true
 	}
-	return len(logical) == 1 && logical[0] == "" && (!m.logFilterActive || m.logFilter == "")
+	return len(logical) == 1 && logical[0] == "" && (!model.logFilterActive || model.logFilter == "")
 }
 
-// logWindow clamps scroll to a valid [start,end) slice window over n rows.
-func logWindow(n, scroll, visible int) (start, end int) {
-	maxStart := n - visible
+// logWindow clamps scroll to a valid [start,end) slice window over total rows.
+func logWindow(total, scroll, visible int) (start, end int) {
+	maxStart := total - visible
 	if maxStart < 0 {
 		maxStart = 0
 	}
@@ -391,78 +391,79 @@ func logWindow(n, scroll, visible int) (start, end int) {
 		start = maxStart
 	}
 	end = start + visible
-	if end > n {
-		end = n
+	if end > total {
+		end = total
 	}
 	return start, end
 }
 
-func (m Model) renderFooter() string {
-	line := strings.Join(m.footerParts(), "  ·  ")
-	if m.status != "" {
-		line += "  ·  " + m.status
+func (model Model) renderFooter() string {
+	line := strings.Join(model.footerParts(), "  ·  ")
+	if model.status != "" {
+		line += "  ·  " + model.status
 	}
-	if m.err != "" {
-		line += "  ·  " + m.err
+	if model.err != "" {
+		line += "  ·  " + model.err
 	}
 	// Single visual row so the height budget stays valid.
-	w := m.width
+	w := model.width
 	if w <= 0 {
 		w = 80
 	}
 	line = truncate(line, w)
-	if m.err != "" && strings.Contains(line, m.err) {
-		idx := strings.LastIndex(line, m.err)
+	if model.err != "" && strings.Contains(line, model.err) {
+		idx := strings.LastIndex(line, model.err)
 		return footerStyle.Render(line[:idx]) + errorStyle.Render(line[idx:])
 	}
 	return footerStyle.Render(line)
 }
 
 // footerParts builds the breadcrumb segments (pool/env/namespace/pod/…) for the footer.
-func (m Model) footerParts() []string {
+func (model Model) footerParts() []string {
 	parts := []string{}
-	if pool := m.selectedPoolName(); pool != "" {
+	if pool := model.selectedPoolName(); pool != "" {
 		parts = append(parts, "pool="+pool)
 	}
-	env, _, _, ok := m.selectedEnv()
+	env, _, _, ok := model.selectedEnv()
 	if !ok {
 		return append(parts, "select an environment")
 	}
 	parts = append(parts, "env="+env.Name, "context="+env.Context)
-	if ns := m.footerNamespace(env); ns != "" {
+	if ns := model.footerNamespace(env); ns != "" {
 		parts = append(parts, "namespace="+ns)
 	}
-	if m.deployment != "" {
-		parts = append(parts, "deploy="+m.deployment)
+	if model.deployment != "" {
+		parts = append(parts, "deploy="+model.deployment)
 	}
-	if m.podName != "" {
-		parts = append(parts, "pod="+m.podName)
+	if model.podName != "" {
+		parts = append(parts, "pod="+model.podName)
 	}
-	if ctr := m.selectedContainerName(); ctr != "" && (m.rightView == viewPodDetail || m.rightView == viewPodLogs) {
+	if ctr := model.selectedContainerName(); ctr != "" &&
+		(model.rightView == viewPodDetail || model.rightView == viewPodLogs) {
 		parts = append(parts, "container="+ctr)
 	}
 	return append(parts, "kubeconfig="+config.ResolveKubeconfig(env))
 }
 
-func (m Model) footerNamespace(env config.Environment) string {
-	if m.namespace != "" {
-		return m.namespace
+func (model Model) footerNamespace(env config.Environment) string {
+	if model.namespace != "" {
+		return model.namespace
 	}
 	return env.Namespace
 }
 
-func truncate(s string, n int) string {
-	if n <= 0 {
+func truncate(text string, count int) string {
+	if count <= 0 {
 		return ""
 	}
-	runes := []rune(s)
-	if len(runes) <= n {
-		return s
+	runes := []rune(text)
+	if len(runes) <= count {
+		return text
 	}
-	if n <= 1 {
-		return string(runes[:n])
+	if count <= 1 {
+		return string(runes[:count])
 	}
-	return string(runes[:n-1]) + "…"
+	return string(runes[:count-1]) + "…"
 }
 
 var (

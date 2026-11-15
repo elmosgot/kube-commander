@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestRenderHelpContextSensitive(t *testing.T) {
+func TestRenderHelpContextSensitive(test *testing.T) {
 	base := New(testConfig(), "test.yaml")
 	base.width = 200
 
@@ -55,22 +55,22 @@ func TestRenderHelpContextSensitive(t *testing.T) {
 		},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			m := base
-			m.focus = tc.focus
-			m.rightView = tc.view
-			m.logFilterActive = tc.filter
-			if tc.filter {
-				m.logFilter = tErr
+	for _, testcase := range cases {
+		test.Run(testcase.name, func(t *testing.T) {
+			model := base
+			model.focus = testcase.focus
+			model.rightView = testcase.view
+			model.logFilterActive = testcase.filter
+			if testcase.filter {
+				model.logFilter = tErr
 			}
-			help := m.renderHelp()
-			for _, w := range tc.want {
+			help := model.renderHelp()
+			for _, w := range testcase.want {
 				if !strings.Contains(help, w) {
 					t.Fatalf("help missing %q:\n%s", w, help)
 				}
 			}
-			for _, w := range tc.notWant {
+			for _, w := range testcase.notWant {
 				if strings.Contains(help, w) {
 					t.Fatalf("help unexpectedly has %q:\n%s", w, help)
 				}

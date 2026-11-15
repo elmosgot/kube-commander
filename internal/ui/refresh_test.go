@@ -9,137 +9,137 @@ import (
 	"github.com/elmosgot/kube-commander/internal/kube"
 )
 
-func TestAutoRefreshSchedulesQuietFetch(t *testing.T) {
-	m := New(testConfig(), "test.yaml")
-	m.width = 100
-	m.height = 30
-	m.focus = paneRight
-	m.rightView = viewWorkloads
-	m.namespace = tApp
-	m.workloads = []kube.WorkloadInfo{{Name: tAPI}}
-	m.rightCursor = 0
-	m.available[envKey(m.cfg.Pools[0].Environments[0])] = true
-	m.loading = false
-	m.autoRefreshBusy = false
+func TestAutoRefreshSchedulesQuietFetch(test *testing.T) {
+	model := New(testConfig(), "test.yaml")
+	model.width = 100
+	model.height = 30
+	model.focus = paneRight
+	model.rightView = viewWorkloads
+	model.namespace = tApp
+	model.workloads = []kube.WorkloadInfo{{Name: tAPI}}
+	model.rightCursor = 0
+	model.available[envKey(model.cfg.Pools[0].Environments[0])] = true
+	model.loading = false
+	model.autoRefreshBusy = false
 
-	updated, cmd := m.Update(autoRefreshMsg{})
-	m = updated.(Model)
-	if !m.autoRefreshBusy {
-		t.Fatal("expected autoRefreshBusy")
+	updated, cmd := model.Update(autoRefreshMsg{})
+	model = updated.(Model)
+	if !model.autoRefreshBusy {
+		test.Fatal("expected autoRefreshBusy")
 	}
 	if cmd == nil {
-		t.Fatal("expected batch cmd")
+		test.Fatal("expected batch cmd")
 	}
 }
 
-func TestAutoRefreshSkipsLogsView(t *testing.T) {
-	m := New(testConfig(), "test.yaml")
-	m.rightView = viewPodLogs
-	m.loading = false
-	m.autoRefreshBusy = false
+func TestAutoRefreshSkipsLogsView(test *testing.T) {
+	model := New(testConfig(), "test.yaml")
+	model.rightView = viewPodLogs
+	model.loading = false
+	model.autoRefreshBusy = false
 
-	updated, cmd := m.Update(autoRefreshMsg{})
-	m = updated.(Model)
-	if m.autoRefreshBusy {
-		t.Fatal("logs view should not start quiet refresh")
+	updated, cmd := model.Update(autoRefreshMsg{})
+	model = updated.(Model)
+	if model.autoRefreshBusy {
+		test.Fatal("logs view should not start quiet refresh")
 	}
 	if cmd == nil {
-		t.Fatal("expected tick re-arm cmd")
+		test.Fatal("expected tick re-arm cmd")
 	}
 }
 
-func TestSilentWorkloadsPreservesCursorAndFilterIrrelevant(t *testing.T) {
-	m := New(testConfig(), "test.yaml")
-	m.focus = paneRight
-	m.rightView = viewWorkloads
-	m.namespace = tApp
-	m.workloads = []kube.WorkloadInfo{{Name: "a"}, {Name: "b"}, {Name: "c"}}
-	m.rightCursor = 2
+func TestSilentWorkloadsPreservesCursorAndFilterIrrelevant(test *testing.T) {
+	model := New(testConfig(), "test.yaml")
+	model.focus = paneRight
+	model.rightView = viewWorkloads
+	model.namespace = tApp
+	model.workloads = []kube.WorkloadInfo{{Name: "a"}, {Name: "b"}, {Name: "c"}}
+	model.rightCursor = 2
 
-	updated, _ := m.Update(workloadsMsg{
+	updated, _ := model.Update(workloadsMsg{
 		poolIdx:   0,
 		envIdx:    0,
 		namespace: tApp,
 		items:     []kube.WorkloadInfo{{Name: "a"}, {Name: "b"}, {Name: "c"}, {Name: "d"}},
 		silent:    true,
 	})
-	m = updated.(Model)
-	if m.rightCursor != 2 {
-		t.Fatalf("cursor = %d, want 2", m.rightCursor)
+	model = updated.(Model)
+	if model.rightCursor != 2 {
+		test.Fatalf("cursor = %d, want 2", model.rightCursor)
 	}
-	if len(m.workloads) != 4 {
-		t.Fatalf("len = %d", len(m.workloads))
+	if len(model.workloads) != 4 {
+		test.Fatalf("len = %d", len(model.workloads))
 	}
 }
 
-func TestLogChunkAppendsWithoutClearingFilter(t *testing.T) {
-	m := New(testConfig(), "test.yaml")
-	m.width = 100
-	m.height = 30
-	m.focus = paneRight
-	m.rightView = viewPodLogs
-	m.logFollowID = 3
-	m.logText = "alpha\n"
-	m.logFilterActive = true
-	m.logFilter = tErr
-	m.logStickBottom = true
-	m.logScroll = 0
+func TestLogChunkAppendsWithoutClearingFilter(test *testing.T) {
+	model := New(testConfig(), "test.yaml")
+	model.width = 100
+	model.height = 30
+	model.focus = paneRight
+	model.rightView = viewPodLogs
+	model.logFollowID = 3
+	model.logText = "alpha\n"
+	model.logFilterActive = true
+	model.logFilter = tErr
+	model.logStickBottom = true
+	model.logScroll = 0
 
 	ch := make(chan tea.Msg)
-	updated, cmd := m.Update(logChunkMsg{id: 3, text: "error line", ch: ch})
-	m = updated.(Model)
-	if !m.logFilterActive || m.logFilter != tErr {
-		t.Fatalf("filter cleared: active=%v filter=%q", m.logFilterActive, m.logFilter)
+	updated, cmd := model.Update(logChunkMsg{id: 3, text: "error line", ch: ch})
+	model = updated.(Model)
+	if !model.logFilterActive || model.logFilter != tErr {
+		test.Fatalf("filter cleared: active=%v filter=%q", model.logFilterActive, model.logFilter)
 	}
-	if m.logText != "alpha\nerror line" {
-		t.Fatalf("logText = %q", m.logText)
+	if model.logText != "alpha\nerror line" {
+		test.Fatalf("logText = %q", model.logText)
 	}
 	if cmd == nil {
-		t.Fatal("expected listen cmd")
+		test.Fatal("expected listen cmd")
 	}
 }
 
-func TestLogChunkIgnoresStaleID(t *testing.T) {
-	m := New(testConfig(), "test.yaml")
-	m.rightView = viewPodLogs
-	m.logFollowID = 5
-	m.logText = "keep"
-	m.logFilterActive = true
-	m.logFilter = "x"
+func TestLogChunkIgnoresStaleID(test *testing.T) {
+	model := New(testConfig(), "test.yaml")
+	model.rightView = viewPodLogs
+	model.logFollowID = 5
+	model.logText = "keep"
+	model.logFilterActive = true
+	model.logFilter = "x"
 
 	ch := make(chan tea.Msg)
-	updated, cmd := m.Update(logChunkMsg{id: 4, text: "stale", ch: ch})
-	m = updated.(Model)
-	if m.logText != "keep" {
-		t.Fatalf("logText = %q", m.logText)
+	updated, cmd := model.Update(logChunkMsg{id: 4, text: "stale", ch: ch})
+	model = updated.(Model)
+	if model.logText != "keep" {
+		test.Fatalf("logText = %q", model.logText)
 	}
-	if m.logFilter != "x" {
-		t.Fatal("filter changed")
+	if model.logFilter != "x" {
+		test.Fatal("filter changed")
 	}
 	if cmd == nil {
-		t.Fatal("should still drain stale channel")
+		test.Fatal("should still drain stale channel")
 	}
 }
 
-func TestStopLogFollowIncrementsID(t *testing.T) {
-	m := New(testConfig(), "test.yaml")
-	m.logFollowID = 1
+func TestStopLogFollowIncrementsID(test *testing.T) {
+	model := New(testConfig(), "test.yaml")
+	model.logFollowID = 1
 	canceled := false
-	m.logFollowCancel = func() { canceled = true }
-	m.stopLogFollow()
+	model.logFollowCancel = func() { canceled = true }
+	model.stopLogFollow()
 	if !canceled {
-		t.Fatal("expected cancel")
+		test.Fatal("expected cancel")
 	}
-	if m.logFollowID != 2 {
-		t.Fatalf("id = %d", m.logFollowID)
+	if model.logFollowID != 2 {
+		test.Fatalf("id = %d", model.logFollowID)
 	}
-	if m.logFollowCancel != nil {
-		t.Fatal("cancel should be cleared")
+	if model.logFollowCancel != nil {
+		test.Fatal("cancel should be cleared")
 	}
 }
 
-func TestScheduleAutoRefreshInterval(t *testing.T) {
+func TestScheduleAutoRefreshInterval(test *testing.T) {
 	if autoRefreshInterval != 5*time.Second {
-		t.Fatalf("interval = %s", autoRefreshInterval)
+		test.Fatalf("interval = %s", autoRefreshInterval)
 	}
 }

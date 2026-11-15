@@ -12,82 +12,82 @@ import (
 	"github.com/elmosgot/kube-commander/internal/config"
 )
 
-func (m Model) ensureCredentials() (tea.Model, tea.Cmd) {
-	env, poolIdx, envIdx, ok := m.selectedEnv()
+func (model Model) ensureCredentials() (tea.Model, tea.Cmd) {
+	env, poolIdx, envIdx, ok := model.selectedEnv()
 	if !ok {
-		m.err = "select an environment first"
-		return m, nil
+		model.err = "select an environment first"
+		return model, nil
 	}
 	if env.Azure == nil {
-		m.err = "no azure block for this environment"
-		return m, nil
+		model.err = "no azure block for this environment"
+		return model, nil
 	}
-	m.loading = true
-	m.err = ""
-	m.status = "ensuring credentials…"
+	model.loading = true
+	model.err = ""
+	model.status = "ensuring credentials…"
 	line := "az aks get-credentials + kubelogin (" + env.Name + ")"
-	id := m.beginCmd(line, false)
-	return m, tea.Batch(m.spinner.Tick, m.maybeCmdAnim(), func() tea.Msg {
+	id := model.beginCmd(line, false)
+	return model, tea.Batch(model.spinner.Tick, model.maybeCmdAnim(), func() tea.Msg {
 		err := azure.EnsureCredentials(env)
 		return ensureMsg{poolIdx: poolIdx, envIdx: envIdx, cmdID: id, err: err}
 	})
 }
 
-func (m Model) azLogin() (tea.Model, tea.Cmd) {
-	env, poolIdx, envIdx, ok := m.selectedEnv()
+func (model Model) azLogin() (tea.Model, tea.Cmd) {
+	env, poolIdx, envIdx, ok := model.selectedEnv()
 	if !ok {
-		m.err = "select an environment first"
-		return m, nil
+		model.err = "select an environment first"
+		return model, nil
 	}
 	if env.Azure == nil {
-		m.err = "no azure block for this environment"
-		return m, nil
+		model.err = "no azure block for this environment"
+		return model, nil
 	}
 	if env.Azure.Subscription == "" {
-		m.err = "azure.subscription is required for az login"
-		return m, nil
+		model.err = "azure.subscription is required for az login"
+		return model, nil
 	}
 	supportsLoginSub := azure.DetectLoginSubscriptionSupport()
-	m.loading = true
-	m.err = ""
+	model.loading = true
+	model.err = ""
 	line := "az login"
 	if supportsLoginSub {
-		m.status = "az login -s " + env.Azure.Subscription + "…"
+		model.status = "az login -s " + env.Azure.Subscription + "…"
 		line = "az login -s " + env.Azure.Subscription
 	} else {
-		m.status = "az login…"
+		model.status = "az login…"
 	}
-	id := m.beginCmd(line, false)
+	id := model.beginCmd(line, false)
 	cmd := azure.PrepareLoginCmd(env.Azure.Subscription)
-	return m, tea.Batch(m.maybeCmdAnim(), tea.ExecProcess(cmd, func(err error) tea.Msg {
+	return model, tea.Batch(model.maybeCmdAnim(), tea.ExecProcess(cmd, func(err error) tea.Msg {
 		return loginMsg{poolIdx: poolIdx, envIdx: envIdx, cmdID: id, err: err}
 	}))
 }
 
-func (m Model) openPodLogs() (tea.Model, tea.Cmd) {
-	return m.startLogFollow()
+func (model Model) openPodLogs() (tea.Model, tea.Cmd) {
+	return model.startLogFollow()
 }
 
-func (m Model) execIntoContainer() (tea.Model, tea.Cmd) {
-	env, poolIdx, envIdx, ok := m.selectedEnv()
-	if !ok || m.podDetail == nil {
-		return m, nil
+func (model Model) execIntoContainer() (tea.Model, tea.Cmd) {
+	env, poolIdx, envIdx, ok := model.selectedEnv()
+	if !ok || model.podDetail == nil {
+		return model, nil
 	}
-	container := m.selectedContainerName()
+	container := model.selectedContainerName()
 	if container == "" {
-		m.err = "no container selected"
-		return m, nil
+		model.err = "no container selected"
+		return model, nil
 	}
-	args := kubectlExecArgs(env, m.namespace, m.podName, container)
-	line := kubectlExecLine(env, m.namespace, m.podName, container)
+	args := kubectlExecArgs(env, model.namespace, model.podName, container)
+	line := kubectlExecLine(env, model.namespace, model.podName, container)
 	applog.Infof("starting interactive: kubectl %s", strings.Join(args, " "))
-	m.loading = true
-	m.err = ""
-	m.status = fmt.Sprintf("exec %s / %s…", m.podName, container)
-	id := m.beginCmd(line, false)
+	model.loading = true
+	model.err = ""
+	model.status = fmt.Sprintf("exec %s / %s…", model.podName, container)
+	id := model.beginCmd(line, false)
 	// kubectl is a fixed binary; args are built from trusted config/selection.
 	cmd := exec.Command("kubectl", args...) //nolint:gosec // G204: fixed kubectl binary, args from config
-	return m, tea.Batch(m.maybeCmdAnim(), tea.ExecProcess(cmd, func(err error) tea.Msg {
+	return model, tea.Batch(model.maybeCmdAnim(), tea.ExecProcess(cmd, func(err error) tea.Msg {
 		return execMsg{poolIdx: poolIdx, envIdx: envIdx, cmdID: id, err: err}
 	}))
 }
@@ -106,48 +106,48 @@ func kubectlExecArgs(env config.Environment, namespace, pod, container string) [
 	}
 }
 
-func (m Model) refresh() (tea.Model, tea.Cmd) {
-	env, poolIdx, envIdx, ok := m.selectedEnv()
+func (model Model) refresh() (tea.Model, tea.Cmd) {
+	env, poolIdx, envIdx, ok := model.selectedEnv()
 	if !ok {
-		return m, nil
+		return model, nil
 	}
-	if m.rightView == viewPodLogs {
-		return m.startLogFollow()
+	if model.rightView == viewPodLogs {
+		return model.startLogFollow()
 	}
-	m.loading = true
-	m.err = ""
-	m.status = ""
-	m, cmd := m.quietRefreshFor(env, poolIdx, envIdx)
-	return m, tea.Batch(m.spinner.Tick, cmd)
+	model.loading = true
+	model.err = ""
+	model.status = ""
+	model, cmd := model.quietRefreshFor(env, poolIdx, envIdx)
+	return model, tea.Batch(model.spinner.Tick, cmd)
 }
 
 // quietRefreshFor re-fetches the current right view with silent=true for env.
-func (m Model) quietRefreshFor(env config.Environment, poolIdx, envIdx int) (Model, tea.Cmd) {
-	switch m.rightView {
+func (model Model) quietRefreshFor(env config.Environment, poolIdx, envIdx int) (Model, tea.Cmd) {
+	switch model.rightView {
 	case viewPodDetail:
-		ns, pod := m.namespace, m.podName
-		return m.tracked(m.kubectlLinePodDetail(ns, pod), false, func() tea.Msg {
-			msg := m.fetchPodDetail(env, poolIdx, envIdx, ns, pod).(podDetailMsg)
+		ns, pod := model.namespace, model.podName
+		return model.tracked(model.kubectlLinePodDetail(ns, pod), false, func() tea.Msg {
+			msg := model.fetchPodDetail(env, poolIdx, envIdx, ns, pod).(podDetailMsg)
 			msg.silent = true
 			return msg
 		})
 	case viewPods:
-		ns, dep := m.namespace, m.deployment
-		return m.tracked(m.kubectlLinePods(ns, dep), false, func() tea.Msg {
-			msg := m.fetchPods(env, poolIdx, envIdx, ns, dep).(podsMsg)
+		ns, dep := model.namespace, model.deployment
+		return model.tracked(model.kubectlLinePods(ns, dep), false, func() tea.Msg {
+			msg := model.fetchPods(env, poolIdx, envIdx, ns, dep).(podsMsg)
 			msg.silent = true
 			return msg
 		})
 	case viewWorkloads:
-		ns := m.namespace
-		return m.tracked(m.kubectlLineWorkloads(ns), false, func() tea.Msg {
-			msg := m.fetchWorkloads(env, poolIdx, envIdx, ns).(workloadsMsg)
+		ns := model.namespace
+		return model.tracked(model.kubectlLineWorkloads(ns), false, func() tea.Msg {
+			msg := model.fetchWorkloads(env, poolIdx, envIdx, ns).(workloadsMsg)
 			msg.silent = true
 			return msg
 		})
 	default:
-		return m.tracked(m.kubectlLineNamespaces(), false, func() tea.Msg {
-			msg := m.fetchNamespaces(env, poolIdx, envIdx).(namespacesMsg)
+		return model.tracked(model.kubectlLineNamespaces(), false, func() tea.Msg {
+			msg := model.fetchNamespaces(env, poolIdx, envIdx).(namespacesMsg)
 			msg.silent = true
 			return msg
 		})
@@ -155,26 +155,26 @@ func (m Model) quietRefreshFor(env config.Environment, poolIdx, envIdx int) (Mod
 }
 
 // quietRefresh re-fetches the current right view without a spinner/loading flash.
-func (m Model) quietRefresh() (Model, tea.Cmd) {
-	env, poolIdx, envIdx, ok := m.selectedEnv()
-	if !ok || !m.available[envKey(env)] {
-		return m, nil
+func (model Model) quietRefresh() (Model, tea.Cmd) {
+	env, poolIdx, envIdx, ok := model.selectedEnv()
+	if !ok || !model.available[envKey(env)] {
+		return model, nil
 	}
-	if !m.quietRefreshReady() {
-		return m, nil
+	if !model.quietRefreshReady() {
+		return model, nil
 	}
-	return m.quietRefreshFor(env, poolIdx, envIdx)
+	return model.quietRefreshFor(env, poolIdx, envIdx)
 }
 
 // quietRefreshReady reports whether the current view has enough context to refetch.
-func (m Model) quietRefreshReady() bool {
-	switch m.rightView {
+func (model Model) quietRefreshReady() bool {
+	switch model.rightView {
 	case viewPodDetail:
-		return m.podName != ""
+		return model.podName != ""
 	case viewPods:
-		return m.namespace != "" && m.deployment != ""
+		return model.namespace != "" && model.deployment != ""
 	case viewWorkloads:
-		return m.namespace != ""
+		return model.namespace != ""
 	case viewNamespaces:
 		return true
 	default:

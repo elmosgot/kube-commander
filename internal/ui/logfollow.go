@@ -37,59 +37,59 @@ func listenLogFollow(ch <-chan tea.Msg) tea.Cmd {
 	}
 }
 
-func (m *Model) stopLogFollow() {
-	if m.logFollowCmdID != 0 {
-		m.finishCmd(m.logFollowCmdID, nil)
-		m.logFollowCmdID = 0
+func (model *Model) stopLogFollow() {
+	if model.logFollowCmdID != 0 {
+		model.finishCmd(model.logFollowCmdID, nil)
+		model.logFollowCmdID = 0
 	}
-	if m.logFollowCancel != nil {
-		m.logFollowCancel()
-		m.logFollowCancel = nil
+	if model.logFollowCancel != nil {
+		model.logFollowCancel()
+		model.logFollowCancel = nil
 	}
-	m.logFollowID++
+	model.logFollowID++
 }
 
 // startLogFollow cancels any prior stream and begins TailLines+Follow for the selected container.
-func (m Model) startLogFollow() (Model, tea.Cmd) {
-	env, _, _, ok := m.selectedEnv()
-	if !ok || m.podDetail == nil {
-		return m, nil
+func (model Model) startLogFollow() (Model, tea.Cmd) {
+	env, _, _, ok := model.selectedEnv()
+	if !ok || model.podDetail == nil {
+		return model, nil
 	}
-	container := m.selectedContainerName()
+	container := model.selectedContainerName()
 	if container == "" {
-		m.err = "no container selected"
-		return m, nil
+		model.err = "no container selected"
+		return model, nil
 	}
 
-	m.stopLogFollow()
-	id := m.logFollowID
+	model.stopLogFollow()
+	followID := model.logFollowID
 	ctx, cancel := context.WithCancel(context.Background())
-	m.logFollowCancel = cancel
+	model.logFollowCancel = cancel
 
-	m.rightView = viewPodLogs
-	m.logText = ""
-	m.logScroll = 0
-	m.logStickBottom = true
-	m.clearLogFilter()
-	m.loading = true
-	m.err = ""
-	m.status = "following logs…"
-	m.logFollowCmdID = m.beginCmd(m.kubectlLogsFollowLine(), true)
+	model.rightView = viewPodLogs
+	model.logText = ""
+	model.logScroll = 0
+	model.logStickBottom = true
+	model.clearLogFilter()
+	model.loading = true
+	model.err = ""
+	model.status = "following logs…"
+	model.logFollowCmdID = model.beginCmd(model.kubectlLogsFollowLine(), true)
 
-	ns, pod := m.namespace, m.podName
-	ch := make(chan tea.Msg, 32)
-	go runLogFollow(ctx, env, ns, pod, container, id, ch)
-	return m, tea.Batch(m.spinner.Tick, m.maybeCmdAnim(), listenLogFollow(ch))
+	ns, pod := model.namespace, model.podName
+	msgCh := make(chan tea.Msg, 32)
+	go runLogFollow(ctx, env, ns, pod, container, followID, msgCh)
+	return model, tea.Batch(model.spinner.Tick, model.maybeCmdAnim(), listenLogFollow(msgCh))
 }
 
 func runLogFollow(
-	ctx context.Context, env config.Environment, namespace, pod, container string, id int, ch chan tea.Msg,
+	ctx context.Context, env config.Environment, namespace, pod, container string, followID int, msgCh chan tea.Msg,
 ) {
-	defer close(ch)
+	defer close(msgCh)
 
 	stream, err := openLogStream(ctx, env, namespace, pod, container)
 	if err != nil {
-		ch <- logFollowDoneMsg{id: id, err: err, ch: ch}
+		msgCh <- logFollowDoneMsg{id: followID, err: err, ch: msgCh}
 		return
 	}
 	defer func() { _ = stream.Close() }()
@@ -98,7 +98,7 @@ func runLogFollow(
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	lines, errCh := scanLogLines(ctx, scanner)
 
-	pumpLogLines(ctx, id, ch, lines, errCh)
+	pumpLogLines(ctx, followID, msgCh, lines, errCh)
 }
 
 // openLogStream builds a client and starts the follow stream for one container.
@@ -133,7 +133,7 @@ func scanLogLines(ctx context.Context, scanner *bufio.Scanner) (<-chan string, <
 }
 
 // pumpLogLines batches scanned lines and forwards flushed chunks to ch until done.
-func pumpLogLines(ctx context.Context, id int, ch chan tea.Msg, lines <-chan string, errCh <-chan error) {
+func pumpLogLines(ctx context.Context, followID int, msgCh chan tea.Msg, lines <-chan string, errCh <-chan error) {
 	var buf strings.Builder
 	flush := func() {
 		if buf.Len() == 0 {
@@ -142,7 +142,7 @@ func pumpLogLines(ctx context.Context, id int, ch chan tea.Msg, lines <-chan str
 		text := buf.String()
 		buf.Reset()
 		select {
-		case ch <- logChunkMsg{id: id, text: text, ch: ch}:
+		case msgCh <- logChunkMsg{id: followID, text: text, ch: msgCh}:
 		case <-ctx.Done():
 		}
 	}
@@ -158,7 +158,7 @@ func pumpLogLines(ctx context.Context, id int, ch chan tea.Msg, lines <-chan str
 		case line, ok := <-lines:
 			if !ok {
 				flush()
-				finishLogFollow(ctx, id, ch, errCh)
+				finishLogFollow(ctx, followID, msgCh, errCh)
 				return
 			}
 			appendLogLine(&buf, line, flush)
@@ -180,7 +180,7 @@ func appendLogLine(buf *strings.Builder, line string, flush func()) {
 }
 
 // finishLogFollow emits the terminal done message unless ctx was cancelled.
-func finishLogFollow(ctx context.Context, id int, ch chan tea.Msg, errCh <-chan error) {
+func finishLogFollow(ctx context.Context, followID int, msgCh chan tea.Msg, errCh <-chan error) {
 	var doneErr error
 	select {
 	case doneErr = <-errCh:
@@ -189,5 +189,5 @@ func finishLogFollow(ctx context.Context, id int, ch chan tea.Msg, errCh <-chan 
 	if ctx.Err() != nil {
 		return
 	}
-	ch <- logFollowDoneMsg{id: id, err: doneErr, ch: ch}
+	msgCh <- logFollowDoneMsg{id: followID, err: doneErr, ch: msgCh}
 }

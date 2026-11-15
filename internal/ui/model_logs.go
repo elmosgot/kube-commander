@@ -8,70 +8,70 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-func (m Model) updateLogFilter(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (model Model) updateLogFilter(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
-		m.clearLogFilter()
-		m.logScroll = 0
-		return m, nil
+		model.clearLogFilter()
+		model.logScroll = 0
+		return model, nil
 	case "backspace":
-		if m.logFilter != "" {
-			r := []rune(m.logFilter)
-			m.logFilter = string(r[:len(r)-1])
-			m.logScroll = 0
+		if model.logFilter != "" {
+			r := []rune(model.logFilter)
+			model.logFilter = string(r[:len(r)-1])
+			model.logScroll = 0
 		}
-		return m, nil
+		return model, nil
 	case "up":
-		return m.moveRight(-1)
+		return model.moveRight(-1)
 	case keyDown:
-		return m.moveRight(1)
+		return model.moveRight(1)
 	case "pgup":
-		return m.moveRight(-10)
+		return model.moveRight(-10)
 	case "pgdown":
-		return m.moveRight(10)
+		return model.moveRight(10)
 	}
-	return m.appendFilterRunes(msg)
+	return model.appendFilterRunes(msg)
 }
 
 // appendFilterRunes adds printable runes to the active filter query.
 // Letters (including j/k) append to the query — only arrows scroll while filtering.
 // Skip control/meta runes (Alt often injects ESC); keep printable chars so AltGr `|` still works.
-func (m Model) appendFilterRunes(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (model Model) appendFilterRunes(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.Type != tea.KeyRunes || len(msg.Runes) == 0 {
-		return m, nil
+		return model, nil
 	}
-	var b strings.Builder
+	var buf strings.Builder
 	for _, r := range msg.Runes {
 		if unicode.IsPrint(r) {
-			b.WriteRune(r)
+			buf.WriteRune(r)
 		}
 	}
-	if b.Len() == 0 {
-		return m, nil
+	if buf.Len() == 0 {
+		return model, nil
 	}
-	m.logFilter += b.String()
-	m.logScroll = 0
-	return m, nil
+	model.logFilter += buf.String()
+	model.logScroll = 0
+	return model, nil
 }
 
-func (m *Model) clearLogFilter() {
-	m.logFilterActive = false
-	m.logFilter = ""
+func (model *Model) clearLogFilter() {
+	model.logFilterActive = false
+	model.logFilter = ""
 }
 
-func (m Model) filteredLogLines() []string {
-	lines := strings.Split(m.logText, "\n")
-	if !m.logFilterActive || m.logFilter == "" {
+func (model Model) filteredLogLines() []string {
+	lines := strings.Split(model.logText, "\n")
+	if !model.logFilterActive || model.logFilter == "" {
 		return lines
 	}
-	q := strings.ToLower(m.logFilter)
+	query := strings.ToLower(model.logFilter)
 	exclude := false
-	if strings.HasPrefix(q, "!") {
+	if strings.HasPrefix(query, "!") {
 		exclude = true
-		q = strings.TrimPrefix(q, "!")
+		query = strings.TrimPrefix(query, "!")
 	}
 	terms := make([]string, 0)
-	for _, part := range strings.Split(q, "|") {
+	for _, part := range strings.Split(query, "|") {
 		part = strings.TrimSpace(part)
 		if part != "" {
 			terms = append(terms, part)
@@ -101,8 +101,8 @@ func logLineMatches(line string, terms []string) bool {
 }
 
 // logVisibleCount is how many visual log rows fit in the right pane (matches renderPodLogs).
-func (m Model) logVisibleCount() int {
-	bodyH, _ := layoutHeights(m.height, m.showCmds)
+func (model Model) logVisibleCount() int {
+	bodyH, _ := layoutHeights(model.height, model.showCmds)
 	visible := bodyH - 4
 	if visible < 3 {
 		visible = 3
@@ -110,8 +110,8 @@ func (m Model) logVisibleCount() int {
 	return visible
 }
 
-func (m Model) logContentWidth() int {
-	_, rightW := m.paneWidths()
+func (model Model) logContentWidth() int {
+	_, rightW := model.paneWidths()
 	w := rightW - 4
 	if w < 1 {
 		return 1
@@ -119,13 +119,13 @@ func (m Model) logContentWidth() int {
 	return w
 }
 
-func (m Model) visualLogRows() []visualLogRow {
-	return buildVisualLogRows(m.filteredLogLines(), m.logContentWidth())
+func (model Model) visualLogRows() []visualLogRow {
+	return buildVisualLogRows(model.filteredLogLines(), model.logContentWidth())
 }
 
-func (m Model) maxLogScroll() int {
-	n := len(m.visualLogRows())
-	maxStart := n - m.logVisibleCount()
+func (model Model) maxLogScroll() int {
+	n := len(model.visualLogRows())
+	maxStart := n - model.logVisibleCount()
 	if maxStart < 0 {
 		return 0
 	}
@@ -133,37 +133,37 @@ func (m Model) maxLogScroll() int {
 }
 
 // copyLogLogicalLine copies the expanded text of a filtered logical line.
-func (m *Model) copyLogLogicalLine(logicalIdx int) {
-	lines := m.filteredLogLines()
+func (model *Model) copyLogLogicalLine(logicalIdx int) {
+	lines := model.filteredLogLines()
 	if logicalIdx < 0 || logicalIdx >= len(lines) {
-		m.status = "clipboard: no line"
+		model.status = "clipboard: no line"
 		return
 	}
 	text := expandLogEscapes(lines[logicalIdx])
 	if err := copyToClipboard(text); err != nil {
-		m.status = "clipboard failed: " + err.Error()
+		model.status = "clipboard failed: " + err.Error()
 		return
 	}
-	m.status = "copied"
-	m.err = ""
+	model.status = "copied"
+	model.err = ""
 }
 
 // cmdLogIDAtScreen maps a click in the commands panel to a cmd entry id.
-func (m Model) cmdLogIDAtScreen(x, y int) (int, bool) {
-	if !m.showCmds || m.width == 0 {
+func (model Model) cmdLogIDAtScreen(screenX, screenY int) (int, bool) {
+	if !model.showCmds || model.width == 0 {
 		return 0, false
 	}
-	bodyH, cmdsH := layoutHeights(m.height, m.showCmds)
+	bodyH, cmdsH := layoutHeights(model.height, model.showCmds)
 	if cmdsH < 1 {
 		return 0, false
 	}
 	// y0 header; body; then cmds panel
 	panelTop := 1 + bodyH
-	if y < panelTop || y >= panelTop+cmdsH {
+	if screenY < panelTop || screenY >= panelTop+cmdsH {
 		return 0, false
 	}
 	// top border = 0; content from 1
-	contentRow := y - panelTop - 1
+	contentRow := screenY - panelTop - 1
 	if contentRow < 0 {
 		return 0, false
 	}
@@ -171,7 +171,7 @@ func (m Model) cmdLogIDAtScreen(x, y int) (int, bool) {
 	if inner < 1 {
 		inner = 1
 	}
-	rows := m.visibleCmdPanelRows(inner)
+	rows := model.visibleCmdPanelRows(inner)
 	if contentRow >= len(rows) {
 		return 0, false
 	}
@@ -183,8 +183,8 @@ func (m Model) cmdLogIDAtScreen(x, y int) (int, bool) {
 }
 
 // visibleCmdPanelRows returns the title plus the tail of command rows that fit.
-func (m Model) visibleCmdPanelRows(inner int) []cmdPanelRow {
-	rows := buildCmdPanelRows(m.cmdLog, m.cmdAnimFrame, time.Now(), m.width)
+func (model Model) visibleCmdPanelRows(inner int) []cmdPanelRow {
+	rows := buildCmdPanelRows(model.cmdLog, model.cmdAnimFrame, time.Now(), model.width)
 	if len(rows) <= inner {
 		return rows
 	}
@@ -200,28 +200,28 @@ func (m Model) visibleCmdPanelRows(inner int) []cmdPanelRow {
 }
 
 // logLogicalIdxAtScreen maps terminal mouse coords to a filtered logical line index.
-func (m Model) logLogicalIdxAtScreen(x, y int) (int, bool) {
-	if m.rightView != viewPodLogs || m.width == 0 {
+func (model Model) logLogicalIdxAtScreen(screenX, screenY int) (int, bool) {
+	if model.rightView != viewPodLogs || model.width == 0 {
 		return 0, false
 	}
-	leftW, _ := m.paneWidths()
-	if x < leftW {
+	leftW, _ := model.paneWidths()
+	if screenX < leftW {
 		return 0, false
 	}
-	bodyH, _ := layoutHeights(m.height, m.showCmds)
+	bodyH, _ := layoutHeights(model.height, model.showCmds)
 	// Layout: y0 header, then bodyH rows of panes.
-	if y < 1 || y >= 1+bodyH {
+	if screenY < 1 || screenY >= 1+bodyH {
 		return 0, false
 	}
 	// Right pane: top border (0), title (1), log rows from 2.
-	contentRow := y - 1 - 2
-	if contentRow < 0 || contentRow >= m.logVisibleCount() {
+	contentRow := screenY - 1 - 2
+	if contentRow < 0 || contentRow >= model.logVisibleCount() {
 		return 0, false
 	}
-	return logLineAtVisualOffset(m.visualLogRows(), m.logScroll, contentRow)
+	return logLineAtVisualOffset(model.visualLogRows(), model.logScroll, contentRow)
 }
 
-func (m *Model) scrollLogsToBottom() {
-	m.logScroll = m.maxLogScroll()
-	m.logStickBottom = true
+func (model *Model) scrollLogsToBottom() {
+	model.logScroll = model.maxLogScroll()
+	model.logStickBottom = true
 }

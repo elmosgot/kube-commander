@@ -25,6 +25,7 @@ linters:
     - revive
     - staticcheck
     - unused
+    - varnamelen
   settings:
     funlen:
       lines: 100
@@ -42,6 +43,23 @@ linters:
       threshold: 150
     lll:
       line-length: 120
+    varnamelen:
+      min-name-length: 3
+      max-distance: 5
+      check-receiver: true
+      ignore-type-assert-ok: true
+      ignore-map-index-ok: true
+      ignore-chan-recv-ok: true
+      ignore-names:
+        - err
+        - ok
+        - i
+        - j
+        - k
+      ignore-decls:
+        - i int
+        - j int
+        - k int
     revive:
       rules:
         - name: file-length-limit

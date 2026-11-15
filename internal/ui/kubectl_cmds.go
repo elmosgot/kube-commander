@@ -7,30 +7,33 @@ import (
 	"github.com/elmosgot/kube-commander/internal/config"
 )
 
-func (m Model) kubectlLogsFollowLine() string {
-	env, _, _, ok := m.selectedEnv()
+func (model Model) kubectlLogsFollowLine() string {
+	env, _, _, ok := model.selectedEnv()
 	if !ok {
 		return "kubectl logs --follow"
 	}
 	base := kubectlBase(env)
-	ctr := m.selectedContainerName()
-	line := fmt.Sprintf("%s -n %s logs %s --tail=200 --follow", base, shellQuote(m.namespace), shellQuote(m.podName))
+	ctr := model.selectedContainerName()
+	line := fmt.Sprintf(
+		"%s -n %s logs %s --tail=200 --follow",
+		base, shellQuote(model.namespace), shellQuote(model.podName),
+	)
 	if ctr != "" {
 		line += " -c " + shellQuote(ctr)
 	}
 	return line
 }
 
-func (m Model) kubectlLineNamespaces() string {
-	env, _, _, ok := m.selectedEnv()
+func (model Model) kubectlLineNamespaces() string {
+	env, _, _, ok := model.selectedEnv()
 	if !ok {
 		return "kubectl get namespaces"
 	}
 	return kubectlBase(env) + " get namespaces"
 }
 
-func (m Model) kubectlLineWorkloads(namespace string) string {
-	env, _, _, ok := m.selectedEnv()
+func (model Model) kubectlLineWorkloads(namespace string) string {
+	env, _, _, ok := model.selectedEnv()
 	if !ok {
 		return "kubectl get deployments"
 	}
@@ -41,8 +44,8 @@ func (m Model) kubectlLineWorkloads(namespace string) string {
 	return fmt.Sprintf("%s -n %s get deployments", base, shellQuote(namespace))
 }
 
-func (m Model) kubectlLinePods(namespace, deployment string) string {
-	env, _, _, ok := m.selectedEnv()
+func (model Model) kubectlLinePods(namespace, deployment string) string {
+	env, _, _, ok := model.selectedEnv()
 	if !ok {
 		return "kubectl get pods"
 	}
@@ -50,8 +53,8 @@ func (m Model) kubectlLinePods(namespace, deployment string) string {
 		kubectlBase(env), shellQuote(namespace), deployment)
 }
 
-func (m Model) kubectlLinePodDetail(namespace, pod string) string {
-	env, _, _, ok := m.selectedEnv()
+func (model Model) kubectlLinePodDetail(namespace, pod string) string {
+	env, _, _, ok := model.selectedEnv()
 	if !ok {
 		return "kubectl get pod"
 	}
@@ -81,12 +84,12 @@ func kubectlBase(env config.Environment) string {
 	return strings.Join(parts, " ")
 }
 
-func shellQuote(s string) string {
-	if s == "" {
-		return s
+func shellQuote(input string) string {
+	if input == "" {
+		return input
 	}
-	if strings.ContainsAny(s, " \t\"'\\$`") {
-		return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+	if strings.ContainsAny(input, " \t\"'\\$`") {
+		return "'" + strings.ReplaceAll(input, "'", `'\''`) + "'"
 	}
-	return s
+	return input
 }

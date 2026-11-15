@@ -153,61 +153,61 @@ type Model struct {
 
 // New creates a UI model from a loaded config.
 func New(cfg *config.Config, configPath string) Model {
-	s := spinner.New()
-	s.Spinner = spinner.Dot
-	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
+	spin := spinner.New()
+	spin.Spinner = spinner.Dot
+	spin.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
 
-	m := Model{
+	model := Model{
 		cfg:        cfg,
 		configPath: configPath,
 		focus:      paneLeft,
 		expanded:   map[int]bool{},
 		available:  map[string]bool{},
-		spinner:    s,
+		spinner:    spin,
 	}
 	for i := range cfg.Pools {
-		m.expanded[i] = true
+		model.expanded[i] = true
 	}
-	m.refreshAvailability()
-	m.rebuildLeft()
-	if len(m.leftRows) > 0 {
-		for i, row := range m.leftRows {
+	model.refreshAvailability()
+	model.rebuildLeft()
+	if len(model.leftRows) > 0 {
+		for i, row := range model.leftRows {
 			if !row.isPool {
-				m.leftCursor = i
+				model.leftCursor = i
 				break
 			}
 		}
 	}
-	return m
+	return model
 }
 
 func envKey(env config.Environment) string {
 	return config.ResolveKubeconfig(env) + "|" + env.Context
 }
 
-func (m *Model) refreshAvailability() {
-	for i := range m.cfg.Pools {
-		for _, env := range m.cfg.Pools[i].Environments {
-			m.available[envKey(env)] = kube.ContextExists(env)
+func (model *Model) refreshAvailability() {
+	for i := range model.cfg.Pools {
+		for _, env := range model.cfg.Pools[i].Environments {
+			model.available[envKey(env)] = kube.ContextExists(env)
 		}
 	}
 }
 
-func (m *Model) rebuildLeft() {
+func (model *Model) rebuildLeft() {
 	rows := make([]leftRow, 0)
-	for i, pool := range m.cfg.Pools {
+	for i, pool := range model.cfg.Pools {
 		rows = append(rows, leftRow{
 			poolIdx: i,
 			envIdx:  -1,
 			label:   pool.Name,
 			isPool:  true,
 		})
-		if !m.expanded[i] {
+		if !model.expanded[i] {
 			continue
 		}
 		for j, env := range pool.Environments {
 			mark := ""
-			if !m.available[envKey(env)] {
+			if !model.available[envKey(env)] {
 				mark = " [unavailable]"
 			}
 			rows = append(rows, leftRow{
@@ -218,50 +218,50 @@ func (m *Model) rebuildLeft() {
 			})
 		}
 	}
-	m.leftRows = rows
-	if m.leftCursor >= len(m.leftRows) {
-		m.leftCursor = len(m.leftRows) - 1
+	model.leftRows = rows
+	if model.leftCursor >= len(model.leftRows) {
+		model.leftCursor = len(model.leftRows) - 1
 	}
-	if m.leftCursor < 0 {
-		m.leftCursor = 0
+	if model.leftCursor < 0 {
+		model.leftCursor = 0
 	}
 }
 
-func (m Model) selectedEnv() (config.Environment, int, int, bool) {
-	if len(m.leftRows) == 0 {
+func (model Model) selectedEnv() (config.Environment, int, int, bool) {
+	if len(model.leftRows) == 0 {
 		return config.Environment{}, 0, 0, false
 	}
-	row := m.leftRows[m.leftCursor]
+	row := model.leftRows[model.leftCursor]
 	if row.isPool || row.envIdx < 0 {
 		return config.Environment{}, row.poolIdx, -1, false
 	}
-	env := m.cfg.Pools[row.poolIdx].Environments[row.envIdx]
+	env := model.cfg.Pools[row.poolIdx].Environments[row.envIdx]
 	return env, row.poolIdx, row.envIdx, true
 }
 
-func (m Model) selectedPoolName() string {
-	if len(m.leftRows) == 0 {
+func (model Model) selectedPoolName() string {
+	if len(model.leftRows) == 0 {
 		return ""
 	}
-	row := m.leftRows[m.leftCursor]
-	return m.cfg.Pools[row.poolIdx].Name
+	row := model.leftRows[model.leftCursor]
+	return model.cfg.Pools[row.poolIdx].Name
 }
 
-func (m Model) selectedContainerName() string {
-	if m.podDetail == nil || len(m.podDetail.Containers) == 0 {
+func (model Model) selectedContainerName() string {
+	if model.podDetail == nil || len(model.podDetail.Containers) == 0 {
 		return ""
 	}
-	if m.containerIdx < 0 || m.containerIdx >= len(m.podDetail.Containers) {
-		return m.podDetail.Containers[0].Name
+	if model.containerIdx < 0 || model.containerIdx >= len(model.podDetail.Containers) {
+		return model.podDetail.Containers[0].Name
 	}
-	return m.podDetail.Containers[m.containerIdx].Name
+	return model.podDetail.Containers[model.containerIdx].Name
 }
 
 type initFetchMsg struct{}
 
 // Init starts the spinner, loads the initially selected environment, and arms auto-refresh.
-func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.spinner.Tick, scheduleAutoRefresh(), func() tea.Msg {
+func (model Model) Init() tea.Cmd {
+	return tea.Batch(model.spinner.Tick, scheduleAutoRefresh(), func() tea.Msg {
 		return initFetchMsg{}
 	})
 }
@@ -285,23 +285,23 @@ func clampIndex(cur, length int) int {
 	return cur
 }
 
-func (m Model) openSelectedEnvTracked() (tea.Model, tea.Cmd) {
-	env, poolIdx, envIdx, ok := m.selectedEnv()
+func (model Model) openSelectedEnvTracked() (tea.Model, tea.Cmd) {
+	env, poolIdx, envIdx, ok := model.selectedEnv()
 	if !ok {
-		return m, nil
+		return model, nil
 	}
 	if env.Namespace != "" {
-		m.rightView = viewWorkloads
-		m.namespace = env.Namespace
-		m.loading = true
-		return m.tracked(m.kubectlLineWorkloads(env.Namespace), false, func() tea.Msg {
-			return m.fetchWorkloads(env, poolIdx, envIdx, env.Namespace)
+		model.rightView = viewWorkloads
+		model.namespace = env.Namespace
+		model.loading = true
+		return model.tracked(model.kubectlLineWorkloads(env.Namespace), false, func() tea.Msg {
+			return model.fetchWorkloads(env, poolIdx, envIdx, env.Namespace)
 		})
 	}
-	m.rightView = viewNamespaces
-	m.loading = true
-	return m.tracked(m.kubectlLineNamespaces(), false, func() tea.Msg {
-		return m.fetchNamespaces(env, poolIdx, envIdx)
+	model.rightView = viewNamespaces
+	model.loading = true
+	return model.tracked(model.kubectlLineNamespaces(), false, func() tea.Msg {
+		return model.fetchNamespaces(env, poolIdx, envIdx)
 	})
 }
 
@@ -319,7 +319,7 @@ func unavailableHint(env config.Environment) string {
 	return fmt.Sprintf("context %q not found in kubeconfig", env.Context)
 }
 
-func (m Model) fetchNamespaces(env config.Environment, poolIdx, envIdx int) tea.Msg {
+func (model Model) fetchNamespaces(env config.Environment, poolIdx, envIdx int) tea.Msg {
 	if !kube.ContextExists(env) {
 		return namespacesMsg{poolIdx: poolIdx, envIdx: envIdx, err: fmt.Errorf("%s", unavailableHint(env))}
 	}
@@ -331,7 +331,7 @@ func (m Model) fetchNamespaces(env config.Environment, poolIdx, envIdx int) tea.
 	return namespacesMsg{poolIdx: poolIdx, envIdx: envIdx, items: items, err: err}
 }
 
-func (m Model) fetchWorkloads(env config.Environment, poolIdx, envIdx int, namespace string) tea.Msg {
+func (model Model) fetchWorkloads(env config.Environment, poolIdx, envIdx int, namespace string) tea.Msg {
 	if !kube.ContextExists(env) {
 		return workloadsMsg{
 			poolIdx: poolIdx, envIdx: envIdx, namespace: namespace,
@@ -346,7 +346,7 @@ func (m Model) fetchWorkloads(env config.Environment, poolIdx, envIdx int, names
 	return workloadsMsg{poolIdx: poolIdx, envIdx: envIdx, namespace: namespace, items: items, err: err}
 }
 
-func (m Model) fetchPods(env config.Environment, poolIdx, envIdx int, namespace, deployment string) tea.Msg {
+func (model Model) fetchPods(env config.Environment, poolIdx, envIdx int, namespace, deployment string) tea.Msg {
 	client, err := kube.NewClient(env)
 	if err != nil {
 		return podsMsg{poolIdx: poolIdx, envIdx: envIdx, namespace: namespace, deployment: deployment, err: err}
@@ -355,7 +355,7 @@ func (m Model) fetchPods(env config.Environment, poolIdx, envIdx int, namespace,
 	return podsMsg{poolIdx: poolIdx, envIdx: envIdx, namespace: namespace, deployment: deployment, items: items, err: err}
 }
 
-func (m Model) fetchPodDetail(env config.Environment, poolIdx, envIdx int, namespace, pod string) tea.Msg {
+func (model Model) fetchPodDetail(env config.Environment, poolIdx, envIdx int, namespace, pod string) tea.Msg {
 	client, err := kube.NewClient(env)
 	if err != nil {
 		return podDetailMsg{poolIdx: poolIdx, envIdx: envIdx, namespace: namespace, pod: pod, err: err}

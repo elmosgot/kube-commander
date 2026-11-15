@@ -12,468 +12,468 @@ import (
 )
 
 // Update handles keyboard and async messages by dispatching to per-message handlers.
-func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (model Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		return m.onWindowSize(msg)
+		return model.onWindowSize(msg)
 	case tea.MouseMsg:
-		return m.onMouse(msg)
+		return model.onMouse(msg)
 	case spinner.TickMsg:
-		return m.onSpinnerTick(msg)
+		return model.onSpinnerTick(msg)
 	case cmdAnimMsg:
-		return m.onCmdAnim()
+		return model.onCmdAnim()
 	case cmdDoneMsg:
-		return m.onCmdDone(msg)
+		return model.onCmdDone(msg)
 	case initFetchMsg:
-		return m.openSelectedEnvTracked()
+		return model.openSelectedEnvTracked()
 	case autoRefreshMsg:
-		return m.onAutoRefresh()
+		return model.onAutoRefresh()
 	case namespacesMsg:
-		return m.onNamespacesMsg(msg)
+		return model.onNamespacesMsg(msg)
 	case workloadsMsg:
-		return m.onWorkloadsMsg(msg)
+		return model.onWorkloadsMsg(msg)
 	case podsMsg:
-		return m.onPodsMsg(msg)
+		return model.onPodsMsg(msg)
 	case podDetailMsg:
-		return m.onPodDetailMsg(msg)
+		return model.onPodDetailMsg(msg)
 	case logChunkMsg:
-		return m.onLogChunk(msg)
+		return model.onLogChunk(msg)
 	case logFollowDoneMsg:
-		return m.onLogFollowDone(msg)
+		return model.onLogFollowDone(msg)
 	case ensureMsg:
-		return m.onEnsureMsg(msg)
+		return model.onEnsureMsg(msg)
 	case loginMsg:
-		return m.onLoginMsg(msg)
+		return model.onLoginMsg(msg)
 	case execMsg:
-		return m.onExecMsg(msg)
+		return model.onExecMsg(msg)
 	case tea.KeyMsg:
-		return m.onKey(msg)
+		return model.onKey(msg)
 	}
-	return m, nil
+	return model, nil
 }
 
-func (m Model) onWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
-	m.width = msg.Width
-	m.height = msg.Height
-	return m, nil
+func (model Model) onWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
+	model.width = msg.Width
+	model.height = msg.Height
+	return model, nil
 }
 
-func (m Model) onMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+func (model Model) onMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if msg.Action != tea.MouseActionPress || msg.Button != tea.MouseButtonLeft || !msg.Ctrl {
-		return m, nil
+		return model, nil
 	}
-	if m.showCmds {
-		if handled, mm := m.ctrlClickCmdLog(msg.X, msg.Y); handled {
+	if model.showCmds {
+		if handled, mm := model.ctrlClickCmdLog(msg.X, msg.Y); handled {
 			return mm, nil
 		}
 	}
-	if m.rightView == viewPodLogs {
-		if idx, ok := m.logLogicalIdxAtScreen(msg.X, msg.Y); ok {
-			m.copyLogLogicalLine(idx)
+	if model.rightView == viewPodLogs {
+		if idx, ok := model.logLogicalIdxAtScreen(msg.X, msg.Y); ok {
+			model.copyLogLogicalLine(idx)
 		}
 	}
-	return m, nil
+	return model, nil
 }
 
 // ctrlClickCmdLog copies the clicked command-log line; handled is false when the
 // click did not land on a command entry.
-func (m Model) ctrlClickCmdLog(x, y int) (handled bool, out Model) {
-	id, ok := m.cmdLogIDAtScreen(x, y)
+func (model Model) ctrlClickCmdLog(x, y int) (handled bool, out Model) {
+	id, ok := model.cmdLogIDAtScreen(x, y)
 	if !ok {
-		return false, m
+		return false, model
 	}
-	e, found := cmdEntryByID(m.cmdLog, id)
+	e, found := cmdEntryByID(model.cmdLog, id)
 	if !found {
-		return false, m
+		return false, model
 	}
 	if err := copyToClipboard(e.Line); err != nil {
-		m.status = "clipboard failed: " + err.Error()
+		model.status = "clipboard failed: " + err.Error()
 	} else {
-		m.status = "copied"
-		m.err = ""
+		model.status = "copied"
+		model.err = ""
 	}
-	return true, m
+	return true, model
 }
 
-func (m Model) onSpinnerTick(msg spinner.TickMsg) (tea.Model, tea.Cmd) {
+func (model Model) onSpinnerTick(msg spinner.TickMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
-	m.spinner, cmd = m.spinner.Update(msg)
-	return m, tea.Batch(cmd, m.maybeCmdAnim())
+	model.spinner, cmd = model.spinner.Update(msg)
+	return model, tea.Batch(cmd, model.maybeCmdAnim())
 }
 
-func (m Model) onCmdAnim() (tea.Model, tea.Cmd) {
-	m.cmdAnimFrame++
-	return m, m.maybeCmdAnim()
+func (model Model) onCmdAnim() (tea.Model, tea.Cmd) {
+	model.cmdAnimFrame++
+	return model, model.maybeCmdAnim()
 }
 
-func (m Model) onCmdDone(msg cmdDoneMsg) (tea.Model, tea.Cmd) {
-	m.finishCmd(msg.id, msg.err)
-	inner, cmd := m.Update(msg.inner)
+func (model Model) onCmdDone(msg cmdDoneMsg) (tea.Model, tea.Cmd) {
+	model.finishCmd(msg.id, msg.err)
+	inner, cmd := model.Update(msg.inner)
 	m2 := inner.(Model)
 	return m2, tea.Batch(cmd, m2.maybeCmdAnim())
 }
 
-func (m Model) onAutoRefresh() (tea.Model, tea.Cmd) {
+func (model Model) onAutoRefresh() (tea.Model, tea.Cmd) {
 	next := scheduleAutoRefresh()
-	if m.rightView == viewPodLogs || m.loading || m.autoRefreshBusy {
-		return m, next
+	if model.rightView == viewPodLogs || model.loading || model.autoRefreshBusy {
+		return model, next
 	}
 	var cmd tea.Cmd
-	m, cmd = m.quietRefresh()
+	model, cmd = model.quietRefresh()
 	if cmd == nil {
-		return m, next
+		return model, next
 	}
-	m.autoRefreshBusy = true
-	return m, tea.Batch(next, cmd)
+	model.autoRefreshBusy = true
+	return model, tea.Batch(next, cmd)
 }
 
 // staleFor reports whether an async message targets a different environment than
 // the current selection, and clears the busy flag for silent (auto-refresh) msgs.
-func (m *Model) staleFor(poolIdx, envIdx int, silent bool) bool {
-	_, curPool, curEnv, ok := m.selectedEnv()
+func (model *Model) staleFor(poolIdx, envIdx int, silent bool) bool {
+	_, curPool, curEnv, ok := model.selectedEnv()
 	if ok && curPool == poolIdx && curEnv == envIdx {
 		return false
 	}
 	if silent {
-		m.autoRefreshBusy = false
+		model.autoRefreshBusy = false
 	}
 	return true
 }
 
-func (m Model) onNamespacesMsg(msg namespacesMsg) (tea.Model, tea.Cmd) {
-	if m.staleFor(msg.poolIdx, msg.envIdx, msg.silent) {
-		return m, nil
+func (model Model) onNamespacesMsg(msg namespacesMsg) (tea.Model, tea.Cmd) {
+	if model.staleFor(msg.poolIdx, msg.envIdx, msg.silent) {
+		return model, nil
 	}
 	if msg.silent {
-		m.autoRefreshBusy = false
-		if m.rightView != viewNamespaces {
-			return m, nil
+		model.autoRefreshBusy = false
+		if model.rightView != viewNamespaces {
+			return model, nil
 		}
 	}
-	m.loading = false
+	model.loading = false
 	if !msg.silent {
-		m.deployment = ""
-		m.podName = ""
-		m.podDetail = nil
-		m.workloads = nil
-		m.pods = nil
-		m.rightCursor = 0
+		model.deployment = ""
+		model.podName = ""
+		model.podDetail = nil
+		model.workloads = nil
+		model.pods = nil
+		model.rightCursor = 0
 	}
 	if msg.err != nil {
-		return m.namespacesError(msg.err)
+		return model.namespacesError(msg.err)
 	}
-	m.rightView = viewNamespaces
-	m.namespace = ""
-	m.err = ""
-	m.namespaces = msg.items
-	m.rightCursor = clampIndex(m.rightCursor, len(m.namespaces))
-	return m, nil
+	model.rightView = viewNamespaces
+	model.namespace = ""
+	model.err = ""
+	model.namespaces = msg.items
+	model.rightCursor = clampIndex(model.rightCursor, len(model.namespaces))
+	return model, nil
 }
 
-func (m Model) namespacesError(err error) (tea.Model, tea.Cmd) {
-	m.namespaces = nil
+func (model Model) namespacesError(err error) (tea.Model, tea.Cmd) {
+	model.namespaces = nil
 	if kube.IsForbidden(err) {
-		m.err = "cannot list namespaces (RBAC). Set environments[].namespace in config, then reopen the environment."
-		m.focus = paneLeft
-		m.namespace = ""
-		m.status = ""
-		return m, nil
+		model.err = "cannot list namespaces (RBAC). Set environments[].namespace in config, then reopen the environment."
+		model.focus = paneLeft
+		model.namespace = ""
+		model.status = ""
+		return model, nil
 	}
-	m.rightView = viewNamespaces
-	m.namespace = ""
-	m.err = err.Error()
-	return m, nil
+	model.rightView = viewNamespaces
+	model.namespace = ""
+	model.err = err.Error()
+	return model, nil
 }
 
-func (m Model) onWorkloadsMsg(msg workloadsMsg) (tea.Model, tea.Cmd) {
-	if m.staleFor(msg.poolIdx, msg.envIdx, msg.silent) {
-		return m, nil
+func (model Model) onWorkloadsMsg(msg workloadsMsg) (tea.Model, tea.Cmd) {
+	if model.staleFor(msg.poolIdx, msg.envIdx, msg.silent) {
+		return model, nil
 	}
 	if msg.silent {
-		m.autoRefreshBusy = false
-		if m.rightView != viewWorkloads {
-			return m, nil
+		model.autoRefreshBusy = false
+		if model.rightView != viewWorkloads {
+			return model, nil
 		}
 	}
-	if m.rightView == viewWorkloads && m.namespace != "" && m.namespace != msg.namespace {
-		return m, nil
+	if model.rightView == viewWorkloads && model.namespace != "" && model.namespace != msg.namespace {
+		return model, nil
 	}
-	m.loading = false
-	m.rightView = viewWorkloads
-	m.namespace = msg.namespace
+	model.loading = false
+	model.rightView = viewWorkloads
+	model.namespace = msg.namespace
 	if !msg.silent {
-		m.deployment = ""
-		m.podName = ""
-		m.podDetail = nil
-		m.pods = nil
-		m.rightCursor = 0
+		model.deployment = ""
+		model.podName = ""
+		model.podDetail = nil
+		model.pods = nil
+		model.rightCursor = 0
 	}
 	if msg.err != nil {
-		m.err = msg.err.Error()
-		m.workloads = nil
-		return m, nil
+		model.err = msg.err.Error()
+		model.workloads = nil
+		return model, nil
 	}
-	m.err = ""
-	m.workloads = msg.items
-	m.rightCursor = clampIndex(m.rightCursor, len(m.workloads))
-	return m, nil
+	model.err = ""
+	model.workloads = msg.items
+	model.rightCursor = clampIndex(model.rightCursor, len(model.workloads))
+	return model, nil
 }
 
-func (m Model) onPodsMsg(msg podsMsg) (tea.Model, tea.Cmd) {
-	if m.staleFor(msg.poolIdx, msg.envIdx, msg.silent) {
-		return m, nil
+func (model Model) onPodsMsg(msg podsMsg) (tea.Model, tea.Cmd) {
+	if model.staleFor(msg.poolIdx, msg.envIdx, msg.silent) {
+		return model, nil
 	}
 	if msg.silent {
-		m.autoRefreshBusy = false
-		if m.rightView != viewPods {
-			return m, nil
+		model.autoRefreshBusy = false
+		if model.rightView != viewPods {
+			return model, nil
 		}
 	}
-	m.loading = false
-	m.rightView = viewPods
-	m.namespace = msg.namespace
-	m.deployment = msg.deployment
+	model.loading = false
+	model.rightView = viewPods
+	model.namespace = msg.namespace
+	model.deployment = msg.deployment
 	if !msg.silent {
-		m.podName = ""
-		m.podDetail = nil
-		m.rightCursor = 0
+		model.podName = ""
+		model.podDetail = nil
+		model.rightCursor = 0
 	}
 	if msg.err != nil {
-		m.err = msg.err.Error()
-		m.pods = nil
-		return m, nil
+		model.err = msg.err.Error()
+		model.pods = nil
+		return model, nil
 	}
-	m.err = ""
-	m.pods = msg.items
-	m.rightCursor = clampIndex(m.rightCursor, len(m.pods))
-	return m, nil
+	model.err = ""
+	model.pods = msg.items
+	model.rightCursor = clampIndex(model.rightCursor, len(model.pods))
+	return model, nil
 }
 
-func (m Model) onPodDetailMsg(msg podDetailMsg) (tea.Model, tea.Cmd) {
-	if m.staleFor(msg.poolIdx, msg.envIdx, msg.silent) {
-		return m, nil
+func (model Model) onPodDetailMsg(msg podDetailMsg) (tea.Model, tea.Cmd) {
+	if model.staleFor(msg.poolIdx, msg.envIdx, msg.silent) {
+		return model, nil
 	}
 	if msg.silent {
-		m.autoRefreshBusy = false
-		if m.rightView != viewPodDetail {
-			return m, nil
+		model.autoRefreshBusy = false
+		if model.rightView != viewPodDetail {
+			return model, nil
 		}
 	}
-	m.loading = false
-	m.rightView = viewPodDetail
-	m.namespace = msg.namespace
-	m.podName = msg.pod
+	model.loading = false
+	model.rightView = viewPodDetail
+	model.namespace = msg.namespace
+	model.podName = msg.pod
 	if !msg.silent {
-		m.containerIdx = 0
-		m.logText = ""
-		m.logScroll = 0
-		m.clearLogFilter()
+		model.containerIdx = 0
+		model.logText = ""
+		model.logScroll = 0
+		model.clearLogFilter()
 	}
 	if msg.err != nil {
-		m.err = msg.err.Error()
-		m.podDetail = nil
-		return m, nil
+		model.err = msg.err.Error()
+		model.podDetail = nil
+		return model, nil
 	}
-	m.err = ""
-	m.podDetail = msg.detail
-	if m.podDetail != nil {
-		m.containerIdx = clampIndex(m.containerIdx, len(m.podDetail.Containers))
+	model.err = ""
+	model.podDetail = msg.detail
+	if model.podDetail != nil {
+		model.containerIdx = clampIndex(model.containerIdx, len(model.podDetail.Containers))
 	}
-	return m, nil
+	return model, nil
 }
 
-func (m Model) onLogChunk(msg logChunkMsg) (tea.Model, tea.Cmd) {
-	if msg.id != m.logFollowID {
+func (model Model) onLogChunk(msg logChunkMsg) (tea.Model, tea.Cmd) {
+	if msg.id != model.logFollowID {
 		if msg.ch != nil {
-			return m, listenLogFollow(msg.ch)
+			return model, listenLogFollow(msg.ch)
 		}
-		return m, nil
+		return model, nil
 	}
-	if m.rightView != viewPodLogs {
-		return m, listenLogFollow(msg.ch)
+	if model.rightView != viewPodLogs {
+		return model, listenLogFollow(msg.ch)
 	}
-	m.loading = false
-	m.status = "following logs…"
+	model.loading = false
+	model.status = "following logs…"
 	switch {
-	case m.logText == "":
-		m.logText = msg.text
-	case strings.HasSuffix(m.logText, "\n"):
-		m.logText += msg.text
+	case model.logText == "":
+		model.logText = msg.text
+	case strings.HasSuffix(model.logText, "\n"):
+		model.logText += msg.text
 	default:
-		m.logText += "\n" + msg.text
+		model.logText += "\n" + msg.text
 	}
-	if m.logStickBottom {
-		m.scrollLogsToBottom()
+	if model.logStickBottom {
+		model.scrollLogsToBottom()
 	}
-	return m, listenLogFollow(msg.ch)
+	return model, listenLogFollow(msg.ch)
 }
 
-func (m Model) onLogFollowDone(msg logFollowDoneMsg) (tea.Model, tea.Cmd) {
-	if msg.id != m.logFollowID {
-		return m, nil
+func (model Model) onLogFollowDone(msg logFollowDoneMsg) (tea.Model, tea.Cmd) {
+	if msg.id != model.logFollowID {
+		return model, nil
 	}
-	if m.logFollowCmdID != 0 {
-		m.finishCmd(m.logFollowCmdID, msg.err)
-		m.logFollowCmdID = 0
+	if model.logFollowCmdID != 0 {
+		model.finishCmd(model.logFollowCmdID, msg.err)
+		model.logFollowCmdID = 0
 	}
-	m.loading = false
-	if msg.err != nil && m.rightView == viewPodLogs {
-		m.err = msg.err.Error()
-		m.status = ""
-	} else if m.rightView == viewPodLogs {
-		m.status = ""
+	model.loading = false
+	if msg.err != nil && model.rightView == viewPodLogs {
+		model.err = msg.err.Error()
+		model.status = ""
+	} else if model.rightView == viewPodLogs {
+		model.status = ""
 	}
-	return m, m.maybeCmdAnim()
+	return model, model.maybeCmdAnim()
 }
 
-func (m Model) onEnsureMsg(msg ensureMsg) (tea.Model, tea.Cmd) {
+func (model Model) onEnsureMsg(msg ensureMsg) (tea.Model, tea.Cmd) {
 	if msg.cmdID != 0 {
-		m.finishCmd(msg.cmdID, msg.err)
+		model.finishCmd(msg.cmdID, msg.err)
 	}
-	env, poolIdx, envIdx, ok := m.selectedEnv()
+	env, poolIdx, envIdx, ok := model.selectedEnv()
 	if !ok || poolIdx != msg.poolIdx || envIdx != msg.envIdx {
-		return m, m.maybeCmdAnim()
+		return model, model.maybeCmdAnim()
 	}
-	m.loading = false
+	model.loading = false
 	kube.ClearClientCache()
-	m.refreshAvailability()
-	m.rebuildLeft()
+	model.refreshAvailability()
+	model.rebuildLeft()
 	if msg.err != nil {
-		m.err = msg.err.Error()
-		m.status = ""
-		return m, m.maybeCmdAnim()
+		model.err = msg.err.Error()
+		model.status = ""
+		return model, model.maybeCmdAnim()
 	}
-	m.err = ""
-	m.status = "credentials updated"
-	m.loading = true
-	m.namespaces = nil
-	m.workloads = nil
-	m.pods = nil
-	m.podDetail = nil
-	m.rightCursor = 0
+	model.err = ""
+	model.status = "credentials updated"
+	model.loading = true
+	model.namespaces = nil
+	model.workloads = nil
+	model.pods = nil
+	model.podDetail = nil
+	model.rightCursor = 0
 	if env.Namespace != "" {
-		m.rightView = viewWorkloads
-		m.namespace = env.Namespace
-		line := m.kubectlLineWorkloads(env.Namespace)
-		return m.tracked(line, false, func() tea.Msg {
-			return m.fetchWorkloads(env, poolIdx, envIdx, env.Namespace)
+		model.rightView = viewWorkloads
+		model.namespace = env.Namespace
+		line := model.kubectlLineWorkloads(env.Namespace)
+		return model.tracked(line, false, func() tea.Msg {
+			return model.fetchWorkloads(env, poolIdx, envIdx, env.Namespace)
 		})
 	}
-	m.rightView = viewNamespaces
-	m.namespace = ""
-	return m.tracked(m.kubectlLineNamespaces(), false, func() tea.Msg {
-		return m.fetchNamespaces(env, poolIdx, envIdx)
+	model.rightView = viewNamespaces
+	model.namespace = ""
+	return model.tracked(model.kubectlLineNamespaces(), false, func() tea.Msg {
+		return model.fetchNamespaces(env, poolIdx, envIdx)
 	})
 }
 
-func (m Model) onLoginMsg(msg loginMsg) (tea.Model, tea.Cmd) {
+func (model Model) onLoginMsg(msg loginMsg) (tea.Model, tea.Cmd) {
 	if msg.cmdID != 0 {
-		m.finishCmd(msg.cmdID, msg.err)
+		model.finishCmd(msg.cmdID, msg.err)
 	}
-	env, poolIdx, envIdx, ok := m.selectedEnv()
+	env, poolIdx, envIdx, ok := model.selectedEnv()
 	if !ok || poolIdx != msg.poolIdx || envIdx != msg.envIdx {
-		return m, m.maybeCmdAnim()
+		return model, model.maybeCmdAnim()
 	}
 	if msg.err != nil {
 		applog.Infof("az login finished: error: %v", msg.err)
-		m.loading = false
-		m.err = msg.err.Error()
-		m.status = ""
-		return m, m.maybeCmdAnim()
+		model.loading = false
+		model.err = msg.err.Error()
+		model.status = ""
+		return model, model.maybeCmdAnim()
 	}
 	applog.Infof("az login finished: ok")
 	if env.Azure != nil && env.Azure.Subscription != "" {
 		if err := azure.SetSubscription(env.Azure.Subscription); err != nil {
-			m.loading = false
-			m.err = err.Error()
-			m.status = ""
-			return m, nil
+			model.loading = false
+			model.err = err.Error()
+			model.status = ""
+			return model, nil
 		}
 	}
-	m.err = ""
-	m.status = "logged in · ensuring credentials…"
-	return m.ensureCredentials()
+	model.err = ""
+	model.status = "logged in · ensuring credentials…"
+	return model.ensureCredentials()
 }
 
-func (m Model) onExecMsg(msg execMsg) (tea.Model, tea.Cmd) {
+func (model Model) onExecMsg(msg execMsg) (tea.Model, tea.Cmd) {
 	if msg.cmdID != 0 {
-		m.finishCmd(msg.cmdID, msg.err)
+		model.finishCmd(msg.cmdID, msg.err)
 	}
-	_, poolIdx, envIdx, ok := m.selectedEnv()
+	_, poolIdx, envIdx, ok := model.selectedEnv()
 	if !ok || poolIdx != msg.poolIdx || envIdx != msg.envIdx {
-		return m, m.maybeCmdAnim()
+		return model, model.maybeCmdAnim()
 	}
-	m.loading = false
-	m.status = ""
+	model.loading = false
+	model.status = ""
 	if msg.err != nil {
-		m.err = msg.err.Error()
+		model.err = msg.err.Error()
 	} else {
-		m.err = ""
+		model.err = ""
 	}
-	return m, m.maybeCmdAnim()
+	return model, model.maybeCmdAnim()
 }
 
-func (m Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (model Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// While filtering logs, capture keys before global hotkeys (r/c/a/…).
 	// Only ctrl+c still quits so letters like q/r/c can be typed into the query.
-	if m.rightView == viewPodLogs && m.logFilterActive {
+	if model.rightView == viewPodLogs && model.logFilterActive {
 		if msg.String() == "ctrl+c" {
-			m.stopLogFollow()
-			return m, tea.Quit
+			model.stopLogFollow()
+			return model, tea.Quit
 		}
-		return m.updateLogFilter(msg)
+		return model.updateLogFilter(msg)
 	}
 
-	if handled, model, cmd := m.handleGlobalKey(msg); handled {
+	if handled, model, cmd := model.handleGlobalKey(msg); handled {
 		return model, cmd
 	}
 
-	if m.focus == paneLeft {
-		return m.updateLeft(msg)
+	if model.focus == paneLeft {
+		return model.updateLeft(msg)
 	}
-	return m.updateRight(msg)
+	return model.updateRight(msg)
 }
 
 // handleGlobalKey processes hotkeys that apply regardless of pane focus.
 // handled is false when the key should fall through to pane-specific handling.
-func (m Model) handleGlobalKey(msg tea.KeyMsg) (handled bool, model tea.Model, cmd tea.Cmd) {
+func (model Model) handleGlobalKey(msg tea.KeyMsg) (handled bool, out tea.Model, cmd tea.Cmd) {
 	switch msg.String() {
 	case "q", "ctrl+c":
-		m.stopLogFollow()
-		return true, m, tea.Quit
+		model.stopLogFollow()
+		return true, model, tea.Quit
 	case "tab":
-		if m.focus == paneLeft {
-			m.focus = paneRight
+		if model.focus == paneLeft {
+			model.focus = paneRight
 		} else {
-			m.focus = paneLeft
+			model.focus = paneLeft
 		}
-		return true, m, nil
+		return true, model, nil
 	case "r":
-		model, cmd = m.refresh()
-		return true, model, cmd
+		out, cmd = model.refresh()
+		return true, out, cmd
 	case "l":
-		if m.focus == paneLeft {
-			model, cmd = m.ensureCredentials()
-			return true, model, cmd
+		if model.focus == paneLeft {
+			out, cmd = model.ensureCredentials()
+			return true, out, cmd
 		}
 	case "a":
-		if m.focus == paneLeft {
-			model, cmd = m.azLogin()
-			return true, model, cmd
+		if model.focus == paneLeft {
+			out, cmd = model.azLogin()
+			return true, out, cmd
 		}
 	case "c":
-		m.showCmds = !m.showCmds
-		return true, m, m.maybeCmdAnim()
+		model.showCmds = !model.showCmds
+		return true, model, model.maybeCmdAnim()
 	case "g":
-		if m.focus == paneRight && m.rightView == viewPodDetail {
-			model, cmd = m.openPodLogs()
-			return true, model, cmd
+		if model.focus == paneRight && model.rightView == viewPodDetail {
+			out, cmd = model.openPodLogs()
+			return true, out, cmd
 		}
 	case "s":
-		if m.focus == paneRight && m.rightView == viewPodDetail {
-			model, cmd = m.execIntoContainer()
-			return true, model, cmd
+		if model.focus == paneRight && model.rightView == viewPodDetail {
+			out, cmd = model.execIntoContainer()
+			return true, out, cmd
 		}
 	}
-	return false, m, nil
+	return false, model, nil
 }
